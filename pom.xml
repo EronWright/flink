@@ -75,6 +75,7 @@ under the License.
 		<module>flink-contrib</module>
 		<module>flink-dist</module>
 		<module>flink-metric-reporters</module>
+		<module>flink-mesos</module>
 	</modules>
 
 	<properties>

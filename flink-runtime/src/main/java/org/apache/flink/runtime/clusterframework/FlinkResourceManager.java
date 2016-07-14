@@ -256,6 +256,10 @@ public abstract class FlinkResourceManager<WorkerType extends ResourceIDRetrieva
 				StopCluster msg = (StopCluster) message;
 				shutdownCluster(msg.finalStatus(), msg.message());
 			}
+			else if (message instanceof FatalErrorOccurred) {
+				FatalErrorOccurred msg = (FatalErrorOccurred) message;
+				fatalError(msg.message(), msg.error());
+			}
 
 			// --- miscellaneous messages
 
