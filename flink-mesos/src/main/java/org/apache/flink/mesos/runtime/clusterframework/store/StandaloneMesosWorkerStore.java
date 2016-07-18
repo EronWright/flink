@@ -1,7 +1,6 @@
-package org.apache.flink.mesos.runtime.clusterframework.standalone;
+package org.apache.flink.mesos.runtime.clusterframework.store;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.flink.mesos.runtime.clusterframework.MesosWorkerStore;
 import org.apache.mesos.Protos;
 import scala.Option;
 

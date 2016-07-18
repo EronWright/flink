@@ -1,4 +1,4 @@
-package org.apache.flink.mesos.runtime.clusterframework;
+package org.apache.flink.mesos.runtime.clusterframework.store;
 
 import org.apache.mesos.Protos;
 import scala.Option;

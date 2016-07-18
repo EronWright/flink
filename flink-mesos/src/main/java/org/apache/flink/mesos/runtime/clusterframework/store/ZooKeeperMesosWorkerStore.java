@@ -1,4 +1,4 @@
-package org.apache.flink.mesos.runtime.clusterframework;
+package org.apache.flink.mesos.runtime.clusterframework.store;
 
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.shared.SharedCount;
@@ -26,6 +26,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 /**
+ * A ZooKeeper-backed Mesos worker store.
  */
 public class ZooKeeperMesosWorkerStore implements MesosWorkerStore {
 

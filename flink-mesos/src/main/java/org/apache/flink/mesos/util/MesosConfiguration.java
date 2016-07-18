@@ -1,7 +1,5 @@
 package org.apache.flink.mesos.util;
 
-
-import org.apache.flink.mesos.scheduler.SchedulerProxy;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Scheduler;

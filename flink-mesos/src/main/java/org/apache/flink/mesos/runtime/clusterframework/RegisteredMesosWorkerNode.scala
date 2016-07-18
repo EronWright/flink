@@ -1,5 +1,6 @@
 package org.apache.flink.mesos.runtime.clusterframework
 
+import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore
 import org.apache.flink.runtime.clusterframework.types.{ResourceID, ResourceIDRetrievable}
 
 /**
