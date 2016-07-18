@@ -1,7 +1,10 @@
 package org.apache.flink.mesos.util;
 
 
+import org.apache.flink.mesos.scheduler.SchedulerProxy;
+import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
+import org.apache.mesos.Scheduler;
 import org.slf4j.Logger;
 import scala.Option;
 
@@ -35,6 +38,33 @@ public class MesosConfiguration {
 
 	public Option<Protos.Credential.Builder> credential() {
 		return credential;
+	}
+
+	/**
+	 * Revise the configuration with updated framework info.
+     */
+	public MesosConfiguration withFrameworkInfo(Protos.FrameworkInfo.Builder frameworkInfo) {
+		return new MesosConfiguration(masterUrl, frameworkInfo, credential);
+	}
+
+	/**
+	 * Create the Mesos scheduler driver based on this configuration.
+	 * @param scheduler the scheduler to use.
+	 * @param implicitAcknowledgements whether to configure the driver for implicit implicit acknowledgements.
+     * @return a scheduler driver.
+     */
+	public MesosSchedulerDriver createDriver(Scheduler scheduler, boolean implicitAcknowledgements) {
+		MesosSchedulerDriver schedulerDriver;
+		if(this.credential().isDefined()) {
+			schedulerDriver =
+				new MesosSchedulerDriver(scheduler, frameworkInfo.build(), this.masterUrl(), false,
+					this.credential().get().build());
+		}
+		else {
+			schedulerDriver =
+				new MesosSchedulerDriver(scheduler, frameworkInfo.build(), this.masterUrl(), false);
+		}
+		return schedulerDriver;
 	}
 
 	@Override

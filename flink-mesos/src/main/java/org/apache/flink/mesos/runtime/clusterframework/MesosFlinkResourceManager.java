@@ -76,9 +76,9 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 
 	private MesosWorkerStore workerStore;
 
-	private final Map<ResourceID, MesosWorkerStore.Worker> workersInNew;
-	private final Map<ResourceID, MesosWorkerStore.Worker> workersInLaunch;
-	private final Map<ResourceID, MesosWorkerStore.Worker> workersBeingReturned;
+	final Map<ResourceID, MesosWorkerStore.Worker> workersInNew;
+	final Map<ResourceID, MesosWorkerStore.Worker> workersInLaunch;
+	final Map<ResourceID, MesosWorkerStore.Worker> workersBeingReturned;
 
 	/** The number of failed tasks since the master became active */
 	private int failedTasksSoFar;
@@ -117,7 +117,6 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		LOG.info("Initializing Mesos resource master");
 
 		workerStore.start();
-		List<MesosWorkerStore.Worker> workers = workerStore.recoverWorkers();
 
 		// create the scheduler driver to communicate with Mesos
 		ActorGateway selfGateway = new AkkaActorGateway(self(), getLeaderSessionID());
@@ -137,34 +136,36 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			frameworkInfo.setId(frameworkID.get());
 		}
 
-		MesosConfiguration.logMesosConfig(LOG, mesosConfig);
-
-		if(mesosConfig.credential().isDefined()) {
-			schedulerDriver =
-				new MesosSchedulerDriver(schedulerCallbackHandler, frameworkInfo.build(), mesosConfig.masterUrl(), false,
-				mesosConfig.credential().get().build());
-		}
-		else {
-			schedulerDriver =
-				new MesosSchedulerDriver(schedulerCallbackHandler, frameworkInfo.build(), mesosConfig.masterUrl(), false);
-		}
+		MesosConfiguration initializedMesosConfig = mesosConfig.withFrameworkInfo(frameworkInfo);
+		MesosConfiguration.logMesosConfig(LOG, initializedMesosConfig);
+		schedulerDriver = initializedMesosConfig.createDriver(schedulerCallbackHandler, false);
 
 		// create supporting actors
-		launchCoordinator = context().actorOf(
-			LaunchCoordinator.createActorProps(LaunchCoordinator.class, self(), config, schedulerDriver, createOptimizer()),
-			"launchCoordinator");
-
-		reconciliationCoordinator = context().actorOf(
-			ReconciliationCoordinator.createActorProps(ReconciliationCoordinator.class, config, schedulerDriver),
-			"reconciliationCoordinator");
-
-		taskRouter = context().actorOf(
-			Tasks.createActorProps(Tasks.class, config, schedulerDriver, TaskMonitor.class),
-			"tasks");
+		launchCoordinator = createLaunchCoordinator();
+		reconciliationCoordinator = createReconciliationCoordinator();
+		taskRouter = createTaskRouter();
 
 		recoverWorkers();
 
 		schedulerDriver.start();
+	}
+
+	protected ActorRef createTaskRouter() {
+		return context().actorOf(
+			Tasks.createActorProps(Tasks.class, config, schedulerDriver, TaskMonitor.class),
+			"tasks");
+	}
+
+	protected ActorRef createLaunchCoordinator() {
+		return context().actorOf(
+			LaunchCoordinator.createActorProps(LaunchCoordinator.class, self(), config, schedulerDriver, createOptimizer()),
+			"launchCoordinator");
+	}
+
+	protected ActorRef createReconciliationCoordinator() {
+		return context().actorOf(
+			ReconciliationCoordinator.createActorProps(ReconciliationCoordinator.class, config, schedulerDriver),
+			"reconciliationCoordinator");
 	}
 
 	@Override
@@ -173,22 +174,6 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		super.postStop();
 	}
 
-	private TaskSchedulerBuilder createOptimizer() {
-		return new TaskSchedulerBuilder() {
-			TaskScheduler.Builder builder = new TaskScheduler.Builder();
-
-			@Override
-			public TaskSchedulerBuilder withLeaseRejectAction(Action1<VirtualMachineLease> action) {
-				builder.withLeaseRejectAction(action);
-				return this;
-			}
-
-			@Override
-			public TaskScheduler build() {
-				return builder.build();
-			}
-		};
-	}
 	// ------------------------------------------------------------------------
 	//  Actor messages
 	// ------------------------------------------------------------------------
@@ -311,8 +296,10 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				taskRouter.tell(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(worker)), self());
 			}
 
-			// tell the launch coordinator to launch the new tasks
-			launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
+			// tell the launch coordinator to launch any new tasks
+			if(toLaunch.size() >= 1) {
+				launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
+			}
 		}
 	}
 
@@ -349,7 +336,9 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			}
 
 			// tell the launch coordinator to launch the new tasks
-			launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
+			if(toLaunch.size() >= 1) {
+				launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
+			}
 		}
 		catch(Exception ex) {
 			fatalError("unable to request new workers", ex);
@@ -654,6 +643,27 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	}
 
 	/**
+	 * Creates the Fenzo optimizer (builder).
+	 * The builder is an indirection to faciliate unit testing of the Launch Coordinator.
+     */
+	private static TaskSchedulerBuilder createOptimizer() {
+		return new TaskSchedulerBuilder() {
+			TaskScheduler.Builder builder = new TaskScheduler.Builder();
+
+			@Override
+			public TaskSchedulerBuilder withLeaseRejectAction(Action1<VirtualMachineLease> action) {
+				builder.withLeaseRejectAction(action);
+				return this;
+			}
+
+			@Override
+			public TaskScheduler build() {
+				return builder.build();
+			}
+		};
+	}
+
+	/**
 	 * Creates the props needed to instantiate this actor.
 	 *
 	 * Rather than extracting and validating parameters in the constructor, this factory method takes
@@ -685,11 +695,11 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			int numInitialTaskManagers,
 			Logger log)
 	{
-		final int maxFailedContainers = flinkConfig.getInteger(
-			ConfigConstants.YARN_MAX_FAILED_CONTAINERS, numInitialTaskManagers); /* fixme */
-		if (maxFailedContainers >= 0) {
-			log.info("Mesos framework tolerates {} failed TaskManager containers before giving up",
-				maxFailedContainers);
+		final int maxFailedTasks = flinkConfig.getInteger(
+			ConfigConstants.MESOS_MAX_FAILED_TASKS, numInitialTaskManagers);
+		if (maxFailedTasks >= 0) {
+			log.info("Mesos framework tolerates {} failed tasks before giving up",
+				maxFailedTasks);
 		}
 
 		return Props.create(actorClass,
@@ -699,7 +709,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			leaderRetrievalService,
 			taskManagerParameters,
 			taskManagerLaunchContext,
-			maxFailedContainers,
+			maxFailedTasks,
 			numInitialTaskManagers);
 	}
 }

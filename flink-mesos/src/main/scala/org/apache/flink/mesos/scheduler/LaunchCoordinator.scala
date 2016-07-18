@@ -213,7 +213,9 @@ object LaunchCoordinator {
   /**
     * Instructs the launch coordinator to launch some new task.
     */
-  case class Launch(tasks: java.util.List[TaskSpecification])
+  case class Launch(tasks: java.util.List[TaskSpecification]) {
+    require(tasks.size() >= 1, "Launch message must contain at least one task")
+  }
 
   /**
     * Informs the launch coordinator that some task is no longer assigned to a host (for planning purposes).

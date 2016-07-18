@@ -124,7 +124,9 @@ object ReconciliationCoordinator {
     *
     * @param tasks
     */
-  case class Reconcile(tasks: Seq[Protos.TaskStatus], replace: Boolean = false)
+  case class Reconcile(tasks: Seq[Protos.TaskStatus], replace: Boolean = false) {
+    require(tasks.length >= 1, "Reconcile message must contain at least one task")
+  }
 
   /**
     * Calculate an exponential backoff duration.
