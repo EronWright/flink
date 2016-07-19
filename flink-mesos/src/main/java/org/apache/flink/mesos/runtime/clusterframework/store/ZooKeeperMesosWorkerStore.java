@@ -49,6 +49,7 @@ public class ZooKeeperMesosWorkerStore implements MesosWorkerStore {
 	/** A persistent store of serialized workers */
 	private final ZooKeeperStateHandleStore<MesosWorkerStore.Worker> workersInZooKeeper;
 
+	@SuppressWarnings("unchecked")
 	ZooKeeperMesosWorkerStore(
 		CuratorFramework client,
 		String storePath,
@@ -74,7 +75,10 @@ public class ZooKeeperMesosWorkerStore implements MesosWorkerStore {
 		// Keep track of the workers in state handle storage.
 		facade.newNamespaceAwareEnsurePath("/workers").ensure(client.getZookeeperClient());
 		CuratorFramework storeFacade = client.usingNamespace(facade.getNamespace() + "/workers");
-		this.workersInZooKeeper = new ZooKeeperStateHandleStore<>(storeFacade, stateStorage);
+
+		this.workersInZooKeeper = ZooKeeperStateHandleStore.class
+			.getConstructor(CuratorFramework.class, StateStorageHelper.class)
+			.newInstance(storeFacade, stateStorage);
 	}
 
 	@Override
