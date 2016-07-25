@@ -18,6 +18,7 @@
 
 package org.apache.flink.metrics;
 
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.groups.AbstractMetricGroup;
 import org.apache.flink.metrics.groups.TaskManagerMetricGroup;
@@ -25,12 +26,14 @@ import org.apache.flink.metrics.groups.scope.ScopeFormats;
 import org.apache.flink.metrics.reporter.Scheduled;
 import org.apache.flink.metrics.util.TestReporter;
 
+import org.apache.flink.util.TestLogger;
 import org.junit.Assert;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
-public class MetricRegistryTest {
+public class MetricRegistryTest extends TestLogger {
 	
 	/**
 	 * Verifies that the reporter class argument is correctly used to instantiate and open the reporter.
@@ -39,7 +42,7 @@ public class MetricRegistryTest {
 	public void testReporterInstantiation() {
 		Configuration config = new Configuration();
 
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_CLASS, TestReporter1.class.getName());
+		config.setString(ConfigConstants.METRICS_REPORTER_CLASS, TestReporter1.class.getName());
 
 		new MetricRegistry(config);
 
@@ -62,8 +65,8 @@ public class MetricRegistryTest {
 	public void testReporterArgumentForwarding() {
 		Configuration config = new Configuration();
 
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_CLASS, TestReporter2.class.getName());
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_ARGUMENTS, "--arg1 hello --arg2 world");
+		config.setString(ConfigConstants.METRICS_REPORTER_CLASS, TestReporter2.class.getName());
+		config.setString(ConfigConstants.METRICS_REPORTER_ARGUMENTS, "--arg1 hello --arg2 world");
 
 		new MetricRegistry(config);
 	}
@@ -85,8 +88,8 @@ public class MetricRegistryTest {
 	public void testReporterScheduling() throws InterruptedException {
 		Configuration config = new Configuration();
 
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_CLASS, TestReporter3.class.getName());
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_INTERVAL, "50 MILLISECONDS");
+		config.setString(ConfigConstants.METRICS_REPORTER_CLASS, TestReporter3.class.getName());
+		config.setString(ConfigConstants.METRICS_REPORTER_INTERVAL, "50 MILLISECONDS");
 
 		new MetricRegistry(config);
 
@@ -124,7 +127,7 @@ public class MetricRegistryTest {
 	@Test
 	public void testListener() {
 		Configuration config = new Configuration();
-		config.setString(MetricRegistry.KEY_METRICS_REPORTER_CLASS, TestReporter6.class.getName());
+		config.setString(ConfigConstants.METRICS_REPORTER_CLASS, TestReporter6.class.getName());
 
 		MetricRegistry registry = new MetricRegistry(config);
 
@@ -156,22 +159,36 @@ public class MetricRegistryTest {
 	}
 
 	/**
-	 * Verifies that the scopeName configuration is properly extracted.
+	 * Verifies that the scope configuration is properly extracted.
 	 */
 	@Test
 	public void testScopeConfig() {
 		Configuration config = new Configuration();
 
-		config.setString(MetricRegistry.KEY_METRICS_SCOPE_NAMING_TM, "A");
-		config.setString(MetricRegistry.KEY_METRICS_SCOPE_NAMING_JOB, "B");
-		config.setString(MetricRegistry.KEY_METRICS_SCOPE_NAMING_TASK, "C");
-		config.setString(MetricRegistry.KEY_METRICS_SCOPE_NAMING_OPERATOR, "D");
+		config.setString(ConfigConstants.METRICS_SCOPE_NAMING_TM, "A");
+		config.setString(ConfigConstants.METRICS_SCOPE_NAMING_TM_JOB, "B");
+		config.setString(ConfigConstants.METRICS_SCOPE_NAMING_TASK, "C");
+		config.setString(ConfigConstants.METRICS_SCOPE_NAMING_OPERATOR, "D");
 
 		ScopeFormats scopeConfig = MetricRegistry.createScopeConfig(config);
 
 		assertEquals("A", scopeConfig.getTaskManagerFormat().format());
-		assertEquals("B", scopeConfig.getJobFormat().format());
+		assertEquals("B", scopeConfig.getTaskManagerJobFormat().format());
 		assertEquals("C", scopeConfig.getTaskFormat().format());
 		assertEquals("D", scopeConfig.getOperatorFormat().format());
+	}
+
+	@Test
+	public void testConfigurableDelimiter() {
+		Configuration config = new Configuration();
+		config.setString(ConfigConstants.METRICS_SCOPE_DELIMITER, "_");
+		config.setString(ConfigConstants.METRICS_SCOPE_NAMING_TM, "A.B.C.D.E");
+
+		MetricRegistry registry = new MetricRegistry(config);
+
+		TaskManagerMetricGroup tmGroup = new TaskManagerMetricGroup(registry, "host", "id");
+		assertEquals("A_B_C_D_E_name", tmGroup.getMetricIdentifier("name"));
+
+		registry.shutdown();
 	}
 }

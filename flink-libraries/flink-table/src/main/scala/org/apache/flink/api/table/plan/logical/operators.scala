@@ -17,11 +17,8 @@
  */
 package org.apache.flink.api.table.plan.logical
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.`type`.RelDataType
-import org.apache.calcite.rel.core.JoinRelType
 import org.apache.calcite.rel.logical.LogicalProject
 import org.apache.calcite.rex.{RexInputRef, RexNode}
 import org.apache.calcite.tools.RelBuilder
@@ -31,6 +28,9 @@ import org.apache.flink.api.java.operators.join.JoinType
 import org.apache.flink.api.table._
 import org.apache.flink.api.table.expressions._
 import org.apache.flink.api.table.typeutils.TypeConverter
+
+import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 case class Project(projectList: Seq[NamedExpression], child: LogicalNode) extends UnaryNode {
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
@@ -128,7 +128,7 @@ case class Distinct(child: LogicalNode) extends UnaryNode {
 
   override def validate(tableEnv: TableEnvironment): LogicalNode = {
     if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
-      throw new TableException(s"Distinct on stream tables is currently not supported.")
+      failValidation(s"Distinct on stream tables is currently not supported.")
     }
     this
   }
@@ -144,7 +144,7 @@ case class Sort(order: Seq[Ordering], child: LogicalNode) extends UnaryNode {
 
   override def validate(tableEnv: TableEnvironment): LogicalNode = {
     if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
-      throw new TableException(s"Distinct on stream tables is currently not supported.")
+      failValidation(s"Distinct on stream tables is currently not supported.")
     }
     super.validate(tableEnv)
   }
@@ -196,7 +196,7 @@ case class Aggregate(
 
   override def validate(tableEnv: TableEnvironment): LogicalNode = {
     if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
-      throw new TableException(s"Aggregate on stream tables is currently not supported.")
+      failValidation(s"Aggregate on stream tables is currently not supported.")
     }
 
     val resolvedAggregate = super.validate(tableEnv).asInstanceOf[Aggregate]
@@ -236,6 +236,37 @@ case class Aggregate(
   }
 }
 
+case class Minus(left: LogicalNode, right: LogicalNode, all: Boolean) extends BinaryNode {
+  override def output: Seq[Attribute] = left.output
+
+  override protected[logical] def construct(relBuilder: RelBuilder): RelBuilder = {
+    left.construct(relBuilder)
+    right.construct(relBuilder)
+    relBuilder.minus(all)
+  }
+
+  override def validate(tableEnv: TableEnvironment): LogicalNode = {
+    if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
+      failValidation(s"Minus on stream tables is currently not supported.")
+    }
+
+    val resolvedMinus = super.validate(tableEnv).asInstanceOf[Minus]
+    if (left.output.length != right.output.length) {
+      failValidation(s"Minus two table of different column sizes:" +
+        s" ${left.output.size} and ${right.output.size}")
+    }
+    val sameSchema = left.output.zip(right.output).forall { case (l, r) =>
+      l.resultType == r.resultType
+    }
+    if (!sameSchema) {
+      failValidation(s"Minus two table of different schema:" +
+        s" [${left.output.map(a => (a.name, a.resultType)).mkString(", ")}] and" +
+        s" [${right.output.map(a => (a.name, a.resultType)).mkString(", ")}]")
+    }
+    resolvedMinus
+  }
+}
+
 case class Union(left: LogicalNode, right: LogicalNode, all: Boolean) extends BinaryNode {
   override def output: Seq[Attribute] = left.output
 
@@ -246,19 +277,56 @@ case class Union(left: LogicalNode, right: LogicalNode, all: Boolean) extends Bi
   }
 
   override def validate(tableEnv: TableEnvironment): LogicalNode = {
+    if (tableEnv.isInstanceOf[StreamTableEnvironment] && !all) {
+      failValidation(s"Union on stream tables is currently not supported.")
+    }
+
     val resolvedUnion = super.validate(tableEnv).asInstanceOf[Union]
     if (left.output.length != right.output.length) {
-      failValidation(s"Union two table of different column sizes:" +
+      failValidation(s"Union two tables of different column sizes:" +
         s" ${left.output.size} and ${right.output.size}")
     }
     val sameSchema = left.output.zip(right.output).forall { case (l, r) =>
-      l.resultType == r.resultType && l.name == r.name }
+      l.resultType == r.resultType
+    }
     if (!sameSchema) {
-      failValidation(s"Union two table of different schema:" +
+      failValidation(s"Union two tables of different schema:" +
         s" [${left.output.map(a => (a.name, a.resultType)).mkString(", ")}] and" +
         s" [${right.output.map(a => (a.name, a.resultType)).mkString(", ")}]")
     }
     resolvedUnion
+  }
+}
+
+case class Intersect(left: LogicalNode, right: LogicalNode, all: Boolean) extends BinaryNode {
+  override def output: Seq[Attribute] = left.output
+
+  override protected[logical] def construct(relBuilder: RelBuilder): RelBuilder = {
+    left.construct(relBuilder)
+    right.construct(relBuilder)
+    relBuilder.intersect(all)
+  }
+
+  override def validate(tableEnv: TableEnvironment): LogicalNode = {
+    if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
+      failValidation(s"Intersect on stream tables is currently not supported.")
+    }
+
+    val resolvedIntersect = super.validate(tableEnv).asInstanceOf[Intersect]
+    if (left.output.length != right.output.length) {
+      failValidation(s"Intersect two tables of different column sizes:" +
+        s" ${left.output.size} and ${right.output.size}")
+    }
+    // allow different column names between tables
+    val sameSchema = left.output.zip(right.output).forall { case (l, r) =>
+      l.resultType == r.resultType
+    }
+    if (!sameSchema) {
+      failValidation(s"Intersect two tables of different schema:" +
+        s" [${left.output.map(a => (a.name, a.resultType)).mkString(", ")}] and" +
+        s" [${right.output.map(a => (a.name, a.resultType)).mkString(", ")}]")
+    }
+    resolvedIntersect
   }
 }
 
@@ -332,7 +400,7 @@ case class Join(
 
   override def validate(tableEnv: TableEnvironment): LogicalNode = {
     if (tableEnv.isInstanceOf[StreamTableEnvironment]) {
-      throw new TableException(s"Join on stream tables is currently not supported.")
+      failValidation(s"Join on stream tables is currently not supported.")
     }
 
     val resolvedJoin = super.validate(tableEnv).asInstanceOf[Join]
@@ -381,8 +449,7 @@ case class CatalogNode(
     rowType: RelDataType) extends LeafNode {
 
   val output: Seq[Attribute] = rowType.getFieldList.asScala.map { field =>
-    ResolvedFieldReference(
-      field.getName, TypeConverter.sqlTypeToTypeInfo(field.getType.getSqlTypeName))
+    ResolvedFieldReference(field.getName, FlinkTypeFactory.toTypeInfo(field.getType))
   }
 
   override protected[logical] def construct(relBuilder: RelBuilder): RelBuilder = {
@@ -399,8 +466,7 @@ case class LogicalRelNode(
     relNode: RelNode) extends LeafNode {
 
   val output: Seq[Attribute] = relNode.getRowType.getFieldList.asScala.map { field =>
-    ResolvedFieldReference(
-      field.getName, TypeConverter.sqlTypeToTypeInfo(field.getType.getSqlTypeName))
+    ResolvedFieldReference(field.getName, FlinkTypeFactory.toTypeInfo(field.getType))
   }
 
   override protected[logical] def construct(relBuilder: RelBuilder): RelBuilder = {

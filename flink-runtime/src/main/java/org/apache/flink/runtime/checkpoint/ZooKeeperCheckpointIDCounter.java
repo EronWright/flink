@@ -27,7 +27,7 @@ import org.apache.flink.runtime.jobmanager.RecoveryMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * {@link CheckpointIDCounter} instances for JobManagers running in {@link RecoveryMode#ZOOKEEPER}.
@@ -91,14 +91,30 @@ public class ZooKeeperCheckpointIDCounter implements CheckpointIDCounter {
 	}
 
 	@Override
-	public void stop() throws Exception {
+	public void shutdown() throws Exception {
 		synchronized (startStopLock) {
 			if (isStarted) {
+				LOG.info("Shutting down.");
 				sharedCount.close();
 				client.getConnectionStateListenable().removeListener(connStateListener);
 
 				LOG.info("Removing {} from ZooKeeper", counterPath);
 				client.delete().deletingChildrenIfNeeded().inBackground().forPath(counterPath);
+
+				isStarted = false;
+			}
+		}
+	}
+
+	@Override
+	public void suspend() throws Exception {
+		synchronized (startStopLock) {
+			if (isStarted) {
+				LOG.info("Suspending.");
+				sharedCount.close();
+				client.getConnectionStateListenable().removeListener(connStateListener);
+
+				// Don't remove any state
 
 				isStarted = false;
 			}

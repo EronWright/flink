@@ -265,6 +265,22 @@ data.reduce_group(Adder())
       </td>
     </tr>
 
+    <tr>
+      <td><strong>Aggregate</strong></td>
+      <td>
+        <p>Performs a built-in operation (sum, min, max) on one field of all the Tuples in a
+        data set or in each group of a data set. Aggregation can be applied on a full dataset
+        or on a grouped data set.</p>
+{% highlight python %}
+# This code finds the sum of all of the values in the first field and the maximum of all of the values in the second field
+data.aggregate(Aggregation.Sum, 0).and_agg(Aggregation.Max, 1)
+
+# min(), max(), and sum() syntactic sugar functions are also available
+data.sum(0).and_agg(Aggregation.Max, 1)
+{% endhighlight %}
+      </td>
+    </tr>
+
     </tr>
       <td><strong>Join</strong></td>
       <td>
@@ -309,6 +325,16 @@ result = data1.cross(data2)
         <p>Produces the union of two data sets.</p>
 {% highlight python %}
 data.union(data2)
+{% endhighlight %}
+      </td>
+    </tr>
+    <tr>
+      <td><strong>ZipWithIndex</strong></td>
+      <td>
+        <p>Assigns consecutive indexes to each element. For more information, please refer to
+        the [Zip Elements Guide](zip_elements_guide.html#zip-with-a-dense-index).</p>
+{% highlight python %}
+data.zip_with_index()
 {% endhighlight %}
       </td>
     </tr>

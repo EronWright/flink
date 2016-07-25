@@ -24,6 +24,9 @@ import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.accumulators.Accumulator;
 import org.apache.flink.api.common.accumulators.AccumulatorHelper;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.metrics.Gauge;
+import org.apache.flink.metrics.MetricGroup;
+import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
 import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.StoppingException;
 import org.apache.flink.runtime.accumulators.AccumulatorRegistry;
@@ -80,7 +83,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 /**
  * The execution graph is the central data structure that coordinates the distributed
  * execution of a data flow. It keeps representations of each parallel task, each
@@ -117,6 +120,8 @@ public class ExecutionGraph implements Serializable {
 
 	/** The log object used for debugging. */
 	static final Logger LOG = LoggerFactory.getLogger(ExecutionGraph.class);
+
+	static final String RESTARTING_TIME_METRIC_NAME = "restartingTime";
 
 	// --------------------------------------------------------------------------------------------
 
@@ -258,7 +263,8 @@ public class ExecutionGraph implements Serializable {
 			restartStrategy,
 			new ArrayList<BlobKey>(),
 			new ArrayList<URL>(),
-			ExecutionGraph.class.getClassLoader()
+			ExecutionGraph.class.getClassLoader(),
+			new UnregisteredMetricsGroup()
 		);
 	}
 
@@ -272,7 +278,8 @@ public class ExecutionGraph implements Serializable {
 			RestartStrategy restartStrategy,
 			List<BlobKey> requiredJarFiles,
 			List<URL> requiredClasspaths,
-			ClassLoader userClassLoader) {
+			ClassLoader userClassLoader,
+			MetricGroup metricGroup) {
 
 		checkNotNull(executionContext);
 		checkNotNull(jobId);
@@ -306,6 +313,8 @@ public class ExecutionGraph implements Serializable {
 		this.timeout = timeout;
 
 		this.restartStrategy = restartStrategy;
+
+		metricGroup.gauge(RESTARTING_TIME_METRIC_NAME, new RestartTimeGauge());
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -797,21 +806,60 @@ public class ExecutionGraph implements Serializable {
 		}
 	}
 
-	public void fail(Throwable t) {
-		if (t instanceof SuppressRestartsException) {
-			if (restartStrategy != null) {
-				// disable the restart strategy in case that we have seen a SuppressRestartsException
-				// it basically overrides the restart behaviour of a the root cause
-				restartStrategy.disable();
-			}
-		}
-
+	/**
+	 * Suspends the current ExecutionGraph.
+	 *
+	 * The JobStatus will be directly set to SUSPENDED iff the current state is not a terminal
+	 * state. All ExecutionJobVertices will be canceled and the postRunCleanup is executed.
+	 *
+	 * The SUSPENDED state is a local terminal state which stops the execution of the job but does
+	 * not remove the job from the HA job store so that it can be recovered by another JobManager.
+	 *
+	 * @param suspensionCause Cause of the suspension
+	 */
+	public void suspend(Throwable suspensionCause) {
 		while (true) {
-			JobStatus current = state;
-			if (current == JobStatus.FAILING || current.isTerminalState()) {
+			JobStatus currentState = state;
+
+			if (currentState.isGloballyTerminalState()) {
+				// stay in a terminal state
+				return;
+			} else if (transitionState(currentState, JobStatus.SUSPENDED, suspensionCause)) {
+				this.failureCause = suspensionCause;
+
+				for (ExecutionJobVertex ejv: verticesInCreationOrder) {
+					ejv.cancel();
+				}
+
+				synchronized (progressLock) {
+						postRunCleanup();
+						progressLock.notifyAll();
+
+						LOG.info("Job {} has been suspended.", getJobID());
+				}
+
 				return;
 			}
-			else if (transitionState(current, JobStatus.FAILING, t)) {
+		}
+	}
+
+	public void fail(Throwable t) {
+		while (true) {
+			JobStatus current = state;
+			// stay in these states
+			if (current == JobStatus.FAILING ||
+				current == JobStatus.SUSPENDED ||
+				current.isGloballyTerminalState()) {
+				return;
+			} else if (current == JobStatus.RESTARTING && transitionState(current, JobStatus.FAILED, t)) {
+				synchronized (progressLock) {
+					postRunCleanup();
+					progressLock.notifyAll();
+
+					LOG.info("Job {} failed during restart.", getJobID());
+					return;
+				}
+			} else if (transitionState(current, JobStatus.FAILING, t)) {
 				this.failureCause = t;
 
 				if (!verticesInCreationOrder.isEmpty()) {
@@ -839,8 +887,13 @@ public class ExecutionGraph implements Serializable {
 				if (current == JobStatus.CANCELED) {
 					LOG.info("Canceled job during restart. Aborting restart.");
 					return;
-				}
-				else if (current != JobStatus.RESTARTING) {
+				} else if (current == JobStatus.FAILED) {
+					LOG.info("Failed job during restart. Aborting restart.");
+					return;
+				} else if (current == JobStatus.SUSPENDED) {
+					LOG.info("Suspended job during restart. Aborting restart.");
+					return;
+				} else if (current != JobStatus.RESTARTING) {
 					throw new IllegalStateException("Can only restart job from state restarting.");
 				}
 
@@ -864,7 +917,11 @@ public class ExecutionGraph implements Serializable {
 				}
 
 				for (int i = 0; i < stateTimestamps.length; i++) {
-					stateTimestamps[i] = 0;
+					if (i != JobStatus.RESTARTING.ordinal()) {
+						// Only clear the non restarting state in order to preserve when the job was
+						// restarted. This is needed for the restarting time gauge
+						stateTimestamps[i] = 0;
+					}
 				}
 				numFinishedJobVertices = 0;
 				transitionState(JobStatus.RESTARTING, JobStatus.CREATED);
@@ -938,12 +995,12 @@ public class ExecutionGraph implements Serializable {
 	 * This method cleans fields that are irrelevant for the archived execution attempt.
 	 */
 	public void prepareForArchiving() {
-		if (!state.isTerminalState()) {
+		if (!state.isGloballyTerminalState()) {
 			throw new IllegalStateException("Can only archive the job from a terminal state");
 		}
 
 		// clear the non-serializable fields
-		userClassLoader = null;
+		restartStrategy = null;
 		scheduler = null;
 		checkpointCoordinator = null;
 		executionContext = null;
@@ -976,7 +1033,7 @@ public class ExecutionGraph implements Serializable {
 	 */
 	public void waitUntilFinished() throws InterruptedException {
 		synchronized (progressLock) {
-			while (!state.isTerminalState()) {
+			while (!state.isGloballyTerminalState()) {
 				progressLock.wait();
 			}
 		}
@@ -1029,23 +1086,28 @@ public class ExecutionGraph implements Serializable {
 						}
 					}
 					else if (current == JobStatus.FAILING) {
-						if (restartStrategy.canRestart() && transitionState(current, JobStatus.RESTARTING)) {
-							// double check in case that in the meantime a SuppressRestartsException was thrown
-							if (restartStrategy.canRestart()) {
-								restartStrategy.restart(this);
-								break;
-							} else {
-								fail(new Exception("ExecutionGraph went into RESTARTING state but " +
-									"then the restart strategy was disabled."));
-							}
+						boolean allowRestart = !(failureCause instanceof SuppressRestartsException);
 
-						} else if (!restartStrategy.canRestart() && transitionState(current, JobStatus.FAILED, failureCause)) {
+						if (allowRestart && restartStrategy.canRestart() && transitionState(current, JobStatus.RESTARTING)) {
+							restartStrategy.restart(this);
+							break;
+						} else if ((!allowRestart || !restartStrategy.canRestart()) && transitionState(current, JobStatus.FAILED, failureCause)) {
 							postRunCleanup();
 							break;
 						}
 					}
+					else if (current == JobStatus.SUSPENDED) {
+						// we've already cleaned up when entering the SUSPENDED state
+						break;
+					}
+					else if (current.isGloballyTerminalState()) {
+						LOG.warn("Job has entered globally terminal state without waiting for all " +
+							"job vertices to reach final state.");
+						break;
+					}
 					else {
 						fail(new Exception("ExecutionGraph went into final state from state " + current));
+						break;
 					}
 				}
 				// done transitioning the state
@@ -1061,7 +1123,11 @@ public class ExecutionGraph implements Serializable {
 			CheckpointCoordinator coord = this.checkpointCoordinator;
 			this.checkpointCoordinator = null;
 			if (coord != null) {
-				coord.shutdown();
+				if (state.isGloballyTerminalState()) {
+					coord.shutdown();
+				} else {
+					coord.suspend();
+				}
 			}
 
 			// We don't clean the checkpoint stats tracker, because we want
@@ -1073,8 +1139,13 @@ public class ExecutionGraph implements Serializable {
 		try {
 			CheckpointCoordinator coord = this.savepointCoordinator;
 			this.savepointCoordinator = null;
+
 			if (coord != null) {
-				coord.shutdown();
+				if (state.isGloballyTerminalState()) {
+					coord.shutdown();
+				} else {
+					coord.suspend();
+				}
 			}
 		} catch (Exception e) {
 			LOG.error("Error while cleaning up after execution", e);
@@ -1239,6 +1310,36 @@ public class ExecutionGraph implements Serializable {
 		// see what this means for us. currently, the first FAILED state means -> FAILED
 		if (newExecutionState == ExecutionState.FAILED) {
 			fail(error);
+		}
+	}
+
+	/**
+	 * Gauge which returns the last restarting time. Restarting time is the time between
+	 * JobStatus.RESTARTING and JobStatus.RUNNING or a terminal state if JobStatus.RUNNING was not
+	 * reached. If the job has not yet reached either of these states, then the time is measured
+	 * since reaching JobStatus.RESTARTING. If it is still the initial job execution, then the
+	 * gauge will return 0.
+	 */
+	private class RestartTimeGauge implements Gauge<Long> {
+
+		@Override
+		public Long getValue() {
+			long restartingTimestamp = stateTimestamps[JobStatus.RESTARTING.ordinal()];
+
+			if (restartingTimestamp <= 0) {
+				// we haven't yet restarted our job
+				return 0L;
+			} else if (stateTimestamps[JobStatus.RUNNING.ordinal()] >= restartingTimestamp) {
+				// we have transitioned to RUNNING since the last restart
+				return stateTimestamps[JobStatus.RUNNING.ordinal()] - restartingTimestamp;
+			} else if (state.isTerminalState()) {
+				// since the last restart we've switched to a terminal state without touching
+				// the RUNNING state (e.g. failing from RESTARTING)
+				return stateTimestamps[state.ordinal()] - restartingTimestamp;
+			} else {
+				// we're still somwhere between RESTARTING and RUNNING
+				return System.currentTimeMillis() - restartingTimestamp;
+			}
 		}
 	}
 }

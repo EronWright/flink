@@ -42,7 +42,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * This class implements the BLOB server. The BLOB server is responsible for listening for incoming requests and
@@ -301,9 +301,6 @@ public class BlobServer extends Thread implements BlobService {
 				LOG.error("BLOB server failed to properly clean up its storage directory.");
 			}
 
-			// Clean up the recovery directory
-			blobStore.cleanUp();
-
 			// Remove shutdown hook to prevent resource leaks, unless this is invoked by the
 			// shutdown hook itself
 			if (shutdownHook != null && shutdownHook != Thread.currentThread()) {
@@ -431,4 +428,5 @@ public class BlobServer extends Thread implements BlobService {
 			return new ArrayList<BlobServerConnection>(activeConnections);
 		}
 	}
+
 }

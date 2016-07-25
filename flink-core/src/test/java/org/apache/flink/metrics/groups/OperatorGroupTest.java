@@ -35,7 +35,7 @@ public class OperatorGroupTest {
 		MetricRegistry registry = new MetricRegistry(new Configuration());
 
 		TaskManagerMetricGroup tmGroup = new TaskManagerMetricGroup(registry, "theHostName", "test-tm-id");
-		JobMetricGroup jmGroup = new JobMetricGroup(registry, tmGroup, new JobID(), "myJobName");
+		TaskManagerJobMetricGroup jmGroup = new TaskManagerJobMetricGroup(registry, tmGroup, new JobID(), "myJobName");
 		TaskMetricGroup taskGroup = new TaskMetricGroup(
 				registry, jmGroup,  new AbstractID(),  new AbstractID(), "aTaskName", 11, 0);
 		OperatorMetricGroup opGroup = new OperatorMetricGroup(registry, taskGroup, "myOpName");
@@ -45,7 +45,9 @@ public class OperatorGroupTest {
 				opGroup.getScopeComponents());
 
 		assertEquals(
-				"theHostName.taskmanager.test-tm-id.myJobName.myOpName.11",
-				opGroup.getScopeString());
+				"theHostName.taskmanager.test-tm-id.myJobName.myOpName.11.name",
+				opGroup.getMetricIdentifier("name"));
+
+		registry.shutdown();
 	}
 }

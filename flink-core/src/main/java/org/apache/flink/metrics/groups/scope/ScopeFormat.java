@@ -19,7 +19,10 @@
 package org.apache.flink.metrics.groups.scope;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.metrics.CharacterFilter;
+import org.apache.flink.metrics.groups.JobManagerMetricGroup;
 import org.apache.flink.metrics.groups.JobMetricGroup;
+import org.apache.flink.metrics.groups.TaskManagerJobMetricGroup;
 import org.apache.flink.metrics.groups.TaskManagerMetricGroup;
 import org.apache.flink.metrics.groups.TaskMetricGroup;
 import org.apache.flink.util.AbstractID;
@@ -42,6 +45,13 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * exclude it (continuity of the namespace across failure and recovery).
  */
 public abstract class ScopeFormat {
+
+	private static CharacterFilter defaultFilter = new CharacterFilter() {
+		@Override
+		public String filterCharacters(String input) {
+			return input;
+		}
+	};
 
 	// ------------------------------------------------------------------------
 	//  Scope Format Special Characters
@@ -66,29 +76,47 @@ public abstract class ScopeFormat {
 	//  Scope Variables
 	// ------------------------------------------------------------------------
 
+	public static final String SCOPE_ACTOR_HOST = asVariable("host");
+
+	// ----- Job Manager ----
+
+	/** The default scope format of the JobManager component: {@code "<host>.jobmanager"} */
+	public static final String DEFAULT_SCOPE_JOBMANAGER_COMPONENT =
+		concat(SCOPE_ACTOR_HOST, "jobmanager");
+
+	/** The default scope format of JobManager metrics: {@code "<host>.jobmanager"} */
+	public static final String DEFAULT_SCOPE_JOBMANAGER_GROUP = DEFAULT_SCOPE_JOBMANAGER_COMPONENT;
+
 	// ----- Task Manager ----
 
-	public static final String SCOPE_TASKMANAGER_HOST = asVariable("host");
 	public static final String SCOPE_TASKMANAGER_ID = asVariable("tm_id");
 
 	/** The default scope format of the TaskManager component: {@code "<host>.taskmanager.<tm_id>"} */
 	public static final String DEFAULT_SCOPE_TASKMANAGER_COMPONENT =
-			concat(SCOPE_TASKMANAGER_HOST, "taskmanager", SCOPE_TASKMANAGER_ID);
+			concat(SCOPE_ACTOR_HOST, "taskmanager", SCOPE_TASKMANAGER_ID);
 
 	/** The default scope format of TaskManager metrics: {@code "<host>.taskmanager.<tm_id>"} */
 	public static final String DEFAULT_SCOPE_TASKMANAGER_GROUP = DEFAULT_SCOPE_TASKMANAGER_COMPONENT;
 
-	// ----- Job on Task Manager ----
+	// ----- Job -----
 
 	public static final String SCOPE_JOB_ID = asVariable("job_id");
 	public static final String SCOPE_JOB_NAME = asVariable("job_name");
 
 	/** The default scope format for the job component: {@code "<job_name>"} */
-	public static final String DEFAULT_SCOPE_TASKMANAGER_JOB_COMPONENT = SCOPE_JOB_NAME;
+	public static final String DEFAULT_SCOPE_JOB_COMPONENT = SCOPE_JOB_NAME;
 
-	/** The default scope format for all job metrics: {@code "<host>.taskmanager.<tm_id>.<job_name>"} */
+	// ----- Job on Job Manager ----
+
+	/** The default scope format for all job metrics on a jobmanager: {@code "<host>.jobmanager.<job_name>"} */
+	public static final String DEFAULT_SCOPE_JOBMANAGER_JOB_GROUP =
+		concat(DEFAULT_SCOPE_JOBMANAGER_COMPONENT, DEFAULT_SCOPE_JOB_COMPONENT);
+
+	// ----- Job on Task Manager ----
+
+	/** The default scope format for all job metrics on a taskmanager: {@code "<host>.taskmanager.<tm_id>.<job_name>"} */
 	public static final String DEFAULT_SCOPE_TASKMANAGER_JOB_GROUP =
-			concat(DEFAULT_SCOPE_TASKMANAGER_COMPONENT, DEFAULT_SCOPE_TASKMANAGER_JOB_COMPONENT);
+			concat(DEFAULT_SCOPE_TASKMANAGER_COMPONENT, DEFAULT_SCOPE_JOB_COMPONENT);
 
 	// ----- Task ----
 
@@ -125,13 +153,31 @@ public abstract class ScopeFormat {
 	// ------------------------------------------------------------------------
 
 	/**
+	 * The scope format for the {@link JobManagerMetricGroup}.
+	 */
+	public static class JobManagerScopeFormat extends ScopeFormat {
+
+		public JobManagerScopeFormat(String format) {
+			super(format, null, new String[] {
+				SCOPE_ACTOR_HOST
+			});
+		}
+
+		public String[] formatScope(String hostname) {
+			final String[] template = copyTemplate();
+			final String[] values = { hostname };
+			return bindVariables(template, values);
+		}
+	}
+
+	/**
 	 * The scope format for the {@link TaskManagerMetricGroup}.
 	 */
 	public static class TaskManagerScopeFormat extends ScopeFormat {
 
 		public TaskManagerScopeFormat(String format) {
 			super(format, null, new String[] {
-					SCOPE_TASKMANAGER_HOST,
+					SCOPE_ACTOR_HOST,
 					SCOPE_TASKMANAGER_ID
 			});
 		}
@@ -148,11 +194,35 @@ public abstract class ScopeFormat {
 	/**
 	 * The scope format for the {@link JobMetricGroup}.
 	 */
+	public static class JobManagerJobScopeFormat extends ScopeFormat {
+
+		public JobManagerJobScopeFormat(String format, JobManagerScopeFormat parentFormat) {
+			super(format, parentFormat, new String[] {
+				SCOPE_ACTOR_HOST,
+				SCOPE_JOB_ID,
+				SCOPE_JOB_NAME
+			});
+		}
+
+		public String[] formatScope(JobManagerMetricGroup parent, JobID jid, String jobName) {
+			final String[] template = copyTemplate();
+			final String[] values = {
+				parent.hostname(),
+				valueOrNull(jid),
+				valueOrNull(jobName)
+			};
+			return bindVariables(template, values);
+		}
+	}
+
+	/**
+	 * The scope format for the {@link JobMetricGroup}.
+	 */
 	public static class TaskManagerJobScopeFormat extends ScopeFormat {
 
 		public TaskManagerJobScopeFormat(String format, TaskManagerScopeFormat parentFormat) {
 			super(format, parentFormat, new String[] {
-					SCOPE_TASKMANAGER_HOST,
+					SCOPE_ACTOR_HOST,
 					SCOPE_TASKMANAGER_ID,
 					SCOPE_JOB_ID,
 					SCOPE_JOB_NAME
@@ -180,7 +250,7 @@ public abstract class ScopeFormat {
 
 		public TaskScopeFormat(String format, TaskManagerJobScopeFormat parentFormat) {
 			super(format, parentFormat, new String[] {
-					SCOPE_TASKMANAGER_HOST,
+					SCOPE_ACTOR_HOST,
 					SCOPE_TASKMANAGER_ID,
 					SCOPE_JOB_ID,
 					SCOPE_JOB_NAME,
@@ -193,7 +263,7 @@ public abstract class ScopeFormat {
 		}
 
 		public String[] formatScope(
-				JobMetricGroup parent,
+				TaskManagerJobMetricGroup parent,
 				AbstractID vertexId, AbstractID attemptId,
 				String taskName, int subtask, int attemptNumber) {
 
@@ -222,7 +292,7 @@ public abstract class ScopeFormat {
 
 		public OperatorScopeFormat(String format, TaskScopeFormat parentFormat) {
 			super(format, parentFormat, new String[] {
-					SCOPE_TASKMANAGER_HOST,
+					SCOPE_ACTOR_HOST,
 					SCOPE_TASKMANAGER_ID,
 					SCOPE_JOB_ID,
 					SCOPE_JOB_NAME,
@@ -366,11 +436,32 @@ public abstract class ScopeFormat {
 	}
 
 	public static String concat(String... components) {
+		return concat(defaultFilter, '.', components);
+	}
+
+	public static String concat(CharacterFilter filter, String... components) {
+		return concat(filter, '.', components);
+	}
+
+	public static String concat(Character delimiter, String... components) {
+		return concat(defaultFilter, delimiter, components);
+	}
+
+	/**
+	 * Concatenates the given component names separated by the delimiter character. Additionally
+	 * the character filter is applied to all component names.
+	 *
+	 * @param filter Character filter to be applied to the component names
+	 * @param delimiter Delimiter to separate component names
+	 * @param components Array of component names
+	 * @return The concatenated component name
+	 */
+	public static String concat(CharacterFilter filter, Character delimiter, String... components) {
 		StringBuilder sb = new StringBuilder();
-		sb.append(components[0]);
+		sb.append(filter.filterCharacters(components[0]));
 		for (int x = 1; x < components.length; x++) {
-			sb.append(SCOPE_SEPARATOR);
-			sb.append(components[x]);
+			sb.append(delimiter);
+			sb.append(filter.filterCharacters(components[x]));
 		}
 		return sb.toString();
 	}

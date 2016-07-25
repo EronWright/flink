@@ -19,11 +19,14 @@
 package org.apache.flink.metrics.groups;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.metrics.CharacterFilter;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Gauge;
+import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.Metric;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.MetricRegistry;
+import org.apache.flink.metrics.SimpleCounter;
 
 import org.apache.flink.metrics.groups.scope.ScopeFormat;
 import org.slf4j.Logger;
@@ -85,24 +88,44 @@ public abstract class AbstractMetricGroup implements MetricGroup {
 	/**
 	 * Gets the scope as an array of the scope components, for example
 	 * {@code ["host-7", "taskmanager-2", "window_word_count", "my-mapper"]}
-	 * 
-	 * @see #getScopeString() 
 	 */
 	public String[] getScopeComponents() {
 		return scopeComponents;
 	}
 
 	/**
-	 * Gets the scope as a single delimited string, for example
-	 * {@code "host-7.taskmanager-2.window_word_count.my-mapper"}
+	 * Returns the fully qualified metric name, for example
+	 * {@code "host-7.taskmanager-2.window_word_count.my-mapper.metricName"}
+	 * 
+	 * @param metricName metric name
+	 * @return fully qualified metric name
+     */
+	public String getMetricIdentifier(String metricName) {
+		return getMetricIdentifier(metricName, null);
+	}
+
+	/**
+	 * Returns the fully qualified metric name, for example
+	 * {@code "host-7.taskmanager-2.window_word_count.my-mapper.metricName"}
 	 *
-	 * @see #getScopeComponents()
+	 * @param metricName metric name
+	 * @param filter character filter which is applied to the scope components if not null.
+	 * @return fully qualified metric name
 	 */
-	public String getScopeString() {
+	public String getMetricIdentifier(String metricName, CharacterFilter filter) {
 		if (scopeString == null) {
-			scopeString = ScopeFormat.concat(scopeComponents);
+			if (filter != null) {
+				scopeString = ScopeFormat.concat(filter, registry.getDelimiter(), scopeComponents);
+			} else {
+				scopeString = ScopeFormat.concat(registry.getDelimiter(), scopeComponents);
+			}
 		}
-		return scopeString;
+
+		if (filter != null) {
+			return scopeString + registry.getDelimiter() + filter.filterCharacters(metricName);
+		} else {
+			return scopeString + registry.getDelimiter() + metricName;
+		}
 	}
 	
 	// ------------------------------------------------------------------------
@@ -146,20 +169,40 @@ public abstract class AbstractMetricGroup implements MetricGroup {
 
 	@Override
 	public Counter counter(String name) {
-		Counter counter = new Counter();
+		return counter(name, new SimpleCounter());
+	}
+	
+	@Override
+	public <C extends Counter> C counter(int name, C counter) {
+		return counter(String.valueOf(name), counter);
+	}
+
+	@Override
+	public <C extends Counter> C counter(String name, C counter) {
 		addMetric(name, counter);
 		return counter;
 	}
 
 	@Override
-	public <T> Gauge<T> gauge(int name, Gauge<T> gauge) {
+	public <T, G extends Gauge<T>> G gauge(int name, G gauge) {
 		return gauge(String.valueOf(name), gauge);
 	}
 
 	@Override
-	public <T> Gauge<T> gauge(String name, Gauge<T> gauge) {
+	public <T, G extends Gauge<T>> G gauge(String name, G gauge) {
 		addMetric(name, gauge);
 		return gauge;
+	}
+
+	@Override
+	public <H extends Histogram> H histogram(int name, H histogram) {
+		return histogram(String.valueOf(name), histogram);
+	}
+
+	@Override
+	public <H extends Histogram> H histogram(String name, H histogram) {
+		addMetric(name, histogram);
+		return histogram;
 	}
 
 	/**
@@ -170,9 +213,6 @@ public abstract class AbstractMetricGroup implements MetricGroup {
 	 * @param metric the metric to register
 	 */
 	protected void addMetric(String name, Metric metric) {
-		// early reject names that will later cause issues
-		checkAllowedCharacters(name);
-
 		// add the metric only if the group is still open
 		synchronized (this) {
 			if (!closed) {
@@ -243,23 +283,6 @@ public abstract class AbstractMetricGroup implements MetricGroup {
 				GenericMetricGroup closedGroup = new GenericMetricGroup(registry, this, name);
 				closedGroup.close();
 				return closedGroup;
-			}
-		}
-	}
-
-	// ------------------------------------------------------------------------
-	//  Utilities
-	// ------------------------------------------------------------------------
-
-	/**
-	 * Fast implementation to check if a string has only alphanumeric characters.
-	 * Compared to a regular expression, this is about an order of magnitude faster.
-	 */
-	private static void checkAllowedCharacters(String name) {
-		for (int i = 0; i < name.length(); i++) {
-			final char c = name.charAt(i);
-			if (c < 0x30 || (c >= 0x3a && c <= 0x40) || (c > 0x5a && c <= 0x60) || c > 0x7a) {
-				throw new IllegalArgumentException("Metric names may only contain [a-zA-Z0-9].");
 			}
 		}
 	}

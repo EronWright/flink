@@ -19,11 +19,11 @@
 package org.apache.flink.metrics;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.groups.AbstractMetricGroup;
 import org.apache.flink.metrics.groups.scope.ScopeFormat;
 import org.apache.flink.metrics.groups.scope.ScopeFormats;
-import org.apache.flink.metrics.reporter.JMXReporter;
 import org.apache.flink.metrics.reporter.MetricReporter;
 import org.apache.flink.metrics.reporter.Scheduled;
 
@@ -31,6 +31,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.TimerTask;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -39,59 +41,53 @@ import java.util.concurrent.TimeUnit;
  */
 @Internal
 public class MetricRegistry {
-
-	// ------------------------------------------------------------------------
-	//  configuration keys
-	// ------------------------------------------------------------------------
-
-	public static final String KEY_METRICS_REPORTER_CLASS = "metrics.reporter.class";
-	public static final String KEY_METRICS_REPORTER_ARGUMENTS = "metrics.reporter.arguments";
-	public static final String KEY_METRICS_REPORTER_INTERVAL = "metrics.reporter.interval";
-
-	public static final String KEY_METRICS_SCOPE_NAMING_TM = "metrics.scopeName.tm";
-	public static final String KEY_METRICS_SCOPE_NAMING_JOB = "metrics.scopeName.job";
-	public static final String KEY_METRICS_SCOPE_NAMING_TASK = "metrics.scopeName.task";
-	public static final String KEY_METRICS_SCOPE_NAMING_OPERATOR = "metrics.scopeName.operator";
-
-	// ------------------------------------------------------------------------
-	//  configuration keys
-	// ------------------------------------------------------------------------
-	
-	private static final Logger LOG = LoggerFactory.getLogger(MetricRegistry.class);
+	static final Logger LOG = LoggerFactory.getLogger(MetricRegistry.class);
 	
 	private final MetricReporter reporter;
-	private final java.util.Timer timer;
+	private final ScheduledExecutorService executor;
 
 	private final ScopeFormats scopeFormats;
+
+	private final char delimiter;
 
 	/**
 	 * Creates a new MetricRegistry and starts the configured reporter.
 	 */
 	public MetricRegistry(Configuration config) {
-		// first parse the scopeName formats, these are needed for all reporters
+		// first parse the scope formats, these are needed for all reporters
 		ScopeFormats scopeFormats;
 		try {
 			scopeFormats = createScopeConfig(config);
 		}
 		catch (Exception e) {
-			LOG.warn("Failed to parse scopeName format, using default scopeName formats", e);
+			LOG.warn("Failed to parse scope format, using default scope formats", e);
 			scopeFormats = new ScopeFormats();
 		}
 		this.scopeFormats = scopeFormats;
 
+		char delim;
+		try {
+			delim = config.getString(ConfigConstants.METRICS_SCOPE_DELIMITER, ".").charAt(0);
+		} catch (Exception e) {
+			LOG.warn("Failed to parse delimiter, using default delimiter.", e);
+			delim = '.';
+		}
+		this.delimiter = delim;
+
 		// second, instantiate any custom configured reporters
 		
-		final String className = config.getString(KEY_METRICS_REPORTER_CLASS, null);
+		final String className = config.getString(ConfigConstants.METRICS_REPORTER_CLASS, null);
 		if (className == null) {
+			// by default, don't report anything
+			LOG.info("No metrics reporter configured, no metrics will be exposed/reported.");
 			this.reporter = null;
-			this.timer = null;
+			this.executor = null;
 		}
 		else {
 			MetricReporter reporter;
-			java.util.Timer timer;
-			
+			ScheduledExecutorService executor = null;
 			try {
-				String configuredPeriod = config.getString(KEY_METRICS_REPORTER_INTERVAL, null);
+				String configuredPeriod = config.getString(ConfigConstants.METRICS_REPORTER_INTERVAL, null);
 				TimeUnit timeunit = TimeUnit.SECONDS;
 				long period = 10;
 				
@@ -115,39 +111,55 @@ public class MetricRegistry {
 				reporter.open(reporterConfig);
 
 				if (reporter instanceof Scheduled) {
+					executor = Executors.newSingleThreadScheduledExecutor();
 					LOG.info("Periodically reporting metrics in intervals of {} {}", period, timeunit.name());
-					long millis = timeunit.toMillis(period);
 					
-					timer = new java.util.Timer("Periodic Metrics Reporter", true);
-					timer.schedule(new ReporterTask((Scheduled) reporter), millis, millis);
-				}
-				else {
-					timer = null;
+					executor.scheduleWithFixedDelay(new ReporterTask((Scheduled) reporter), period, period, timeunit);
 				}
 			}
 			catch (Throwable t) {
-				reporter = new JMXReporter();
-				timer = null;
-				LOG.error("Could not instantiate custom metrics reporter. Defaulting to JMX metrics export.", t);
+				shutdownExecutor();
+				LOG.error("Could not instantiate metrics reporter. No metrics will be exposed/reported.", t);
+				reporter = null;
 			}
 
 			this.reporter = reporter;
-			this.timer = timer;
+			this.executor = executor;
 		}
+	}
+
+	public char getDelimiter() {
+		return this.delimiter;
+	}
+
+	public MetricReporter getReporter() {
+		return reporter;
 	}
 
 	/**
 	 * Shuts down this registry and the associated {@link org.apache.flink.metrics.reporter.MetricReporter}.
 	 */
 	public void shutdown() {
-		if (timer != null) {
-			timer.cancel();
-		}
 		if (reporter != null) {
 			try {
 				reporter.close();
 			} catch (Throwable t) {
 				LOG.warn("Metrics reporter did not shut down cleanly", t);
+			}
+		}
+		shutdownExecutor();
+	}
+	
+	private void shutdownExecutor() {
+		if (executor != null) {
+			executor.shutdown();
+
+			try {
+				if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+					executor.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				executor.shutdownNow();
 			}
 		}
 	}
@@ -168,8 +180,12 @@ public class MetricRegistry {
 	 * @param group       the group that contains the metric
 	 */
 	public void register(Metric metric, String metricName, AbstractMetricGroup group) {
-		if (reporter != null) {
-			reporter.notifyOfAddedMetric(metric, metricName, group);
+		try {
+			if (reporter != null) {
+				reporter.notifyOfAddedMetric(metric, metricName, group);
+			}
+		} catch (Exception e) {
+			LOG.error("Error while registering metric.", e);
 		}
 	}
 
@@ -181,8 +197,12 @@ public class MetricRegistry {
 	 * @param group       the group that contains the metric
 	 */
 	public void unregister(Metric metric, String metricName, AbstractMetricGroup group) {
-		if (reporter != null) {
-			reporter.notifyOfRemovedMetric(metric, metricName, group);
+		try {
+			if (reporter != null) {
+				reporter.notifyOfRemovedMetric(metric, metricName, group);
+			}
+		} catch (Exception e) {
+			LOG.error("Error while registering metric.", e);
 		}
 	}
 
@@ -195,7 +215,7 @@ public class MetricRegistry {
 		reporterConfig.setLong("period", period);
 		reporterConfig.setString("timeunit", timeunit.name());
 
-		String[] arguments = config.getString(KEY_METRICS_REPORTER_ARGUMENTS, "").split(" ");
+		String[] arguments = config.getString(ConfigConstants.METRICS_REPORTER_ARGUMENTS, "").split(" ");
 		if (arguments.length > 1) {
 			for (int x = 0; x < arguments.length; x += 2) {
 				reporterConfig.setString(arguments[x].replace("--", ""), arguments[x + 1]);
@@ -205,16 +225,20 @@ public class MetricRegistry {
 	}
 
 	static ScopeFormats createScopeConfig(Configuration config) {
+		String jmFormat = config.getString(
+				ConfigConstants.METRICS_SCOPE_NAMING_JM, ScopeFormat.DEFAULT_SCOPE_JOBMANAGER_GROUP);
+		String jmJobFormat = config.getString(
+			ConfigConstants.METRICS_SCOPE_NAMING_JM_JOB, ScopeFormat.DEFAULT_SCOPE_JOBMANAGER_JOB_GROUP);
 		String tmFormat = config.getString(
-				KEY_METRICS_SCOPE_NAMING_TM, ScopeFormat.DEFAULT_SCOPE_TASKMANAGER_GROUP);
-		String jobFormat = config.getString(
-				KEY_METRICS_SCOPE_NAMING_JOB, ScopeFormat.DEFAULT_SCOPE_TASKMANAGER_JOB_GROUP);
+				ConfigConstants.METRICS_SCOPE_NAMING_TM, ScopeFormat.DEFAULT_SCOPE_TASKMANAGER_GROUP);
+		String tmJobFormat = config.getString(
+				ConfigConstants.METRICS_SCOPE_NAMING_TM_JOB, ScopeFormat.DEFAULT_SCOPE_TASKMANAGER_JOB_GROUP);
 		String taskFormat = config.getString(
-				KEY_METRICS_SCOPE_NAMING_TASK, ScopeFormat.DEFAULT_SCOPE_TASK_GROUP);
+				ConfigConstants.METRICS_SCOPE_NAMING_TASK, ScopeFormat.DEFAULT_SCOPE_TASK_GROUP);
 		String operatorFormat = config.getString(
-				KEY_METRICS_SCOPE_NAMING_OPERATOR, ScopeFormat.DEFAULT_SCOPE_OPERATOR_GROUP);
+				ConfigConstants.METRICS_SCOPE_NAMING_OPERATOR, ScopeFormat.DEFAULT_SCOPE_OPERATOR_GROUP);
 		
-		return new ScopeFormats(tmFormat, jobFormat, taskFormat, operatorFormat);
+		return new ScopeFormats(jmFormat, jmJobFormat, tmFormat, tmJobFormat, taskFormat, operatorFormat);
 	}
 
 	// ------------------------------------------------------------------------
@@ -239,7 +263,11 @@ public class MetricRegistry {
 
 		@Override
 		public void run() {
-			reporter.report();
+			try {
+				reporter.report();
+			} catch (Throwable t) {
+				LOG.warn("Error while reporting metrics", t);
+			}
 		}
 	}
 }

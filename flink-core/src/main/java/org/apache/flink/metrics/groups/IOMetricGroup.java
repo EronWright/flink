@@ -19,40 +19,34 @@
 package org.apache.flink.metrics.groups;
 
 import org.apache.flink.metrics.Counter;
-import org.apache.flink.metrics.MetricRegistry;
 
 /**
- * Special {@link org.apache.flink.metrics.MetricGroup} that contains shareable pre-defined IO-related metrics.
+ * Metric group that contains shareable pre-defined IO-related metrics. The metrics registration is
+ * forwarded to the parent task metric group.
  */
-public class IOMetricGroup extends AbstractMetricGroup {
+public class IOMetricGroup extends ProxyMetricGroup<TaskMetricGroup> {
 
-	private final Counter numBytesIn;
 	private final Counter numBytesOut;
-	private final Counter numRecordsIn;
-	private final Counter numRecordsOut;
+	private final Counter numBytesInLocal;
+	private final Counter numBytesInRemote;
 
-	public IOMetricGroup(MetricRegistry registry, TaskMetricGroup parent) {
-		super(registry, parent.getScopeComponents());
+	public IOMetricGroup(TaskMetricGroup parent) {
+		super(parent);
 
-		this.numBytesIn = parent.counter("numBytesIn");
-		this.numBytesOut = parent.counter("numBytesOut");
-		this.numRecordsIn = parent.counter("numRecordsIn");
-		this.numRecordsOut = parent.counter("numRecordsOut");
-	}
-
-	public Counter getBytesInCounter() {
-		return numBytesIn;
+		this.numBytesOut = counter("numBytesOut");
+		this.numBytesInLocal = counter("numBytesInLocal");
+		this.numBytesInRemote = counter("numBytesInRemote");
 	}
 
 	public Counter getBytesOutCounter() {
 		return numBytesOut;
 	}
 
-	public Counter getRecordsInCounter() {
-		return numRecordsIn;
+	public Counter getNumBytesInLocalCounter() {
+		return numBytesInLocal;
 	}
 
-	public Counter getRecordsOutCounter() {
-		return numRecordsOut;
+	public Counter getNumBytesInRemoteCounter() {
+		return numBytesInRemote;
 	}
 }
