@@ -408,8 +408,7 @@ public class MesosApplicationMasterRunner {
 	private static Configuration createConfiguration(String baseDirectory, Configuration additional) {
 		LOG.info("Loading config from directory " + baseDirectory);
 
-		GlobalConfiguration.loadConfiguration(baseDirectory);
-		Configuration configuration = GlobalConfiguration.getConfiguration();
+		Configuration configuration = GlobalConfiguration.loadConfiguration(baseDirectory);
 
 		configuration.setString(ConfigConstants.FLINK_BASE_DIR_PATH_KEY, baseDirectory);
 
@@ -561,7 +560,7 @@ public class MesosApplicationMasterRunner {
 			new File(workingDirectory, UUID.randomUUID() + "-taskmanager-conf.yaml");
 		LOG.debug("Writing TaskManager configuration to {}", taskManagerConfigFile.getAbsolutePath());
 		BootstrapTools.writeConfiguration(taskManagerConfig, taskManagerConfigFile);
-		cmd.addUris(uri(artifactServer.addFile(taskManagerConfigFile, "flink-conf.yaml"), true));
+		cmd.addUris(uri(artifactServer.addFile(taskManagerConfigFile, GlobalConfiguration.FLINK_CONF_FILENAME), true));
 
 		// prepare additional files to be shipped
 		for (String pathStr : shipListString.split(",")) {

@@ -401,16 +401,19 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	}
 
 	/**
-	 * Accept the given registered worker into the internal state.
+	 * Accept the given started worker into the internal state.
 	 *
 	 * @param resourceID The worker resource id
 	 * @return A registered worker node record.
 	 */
 	@Override
-	protected RegisteredMesosWorkerNode workerRegistered(ResourceID resourceID) throws Exception {
+	protected RegisteredMesosWorkerNode workerStarted(ResourceID resourceID) {
 		MesosWorkerStore.Worker inLaunch = workersInLaunch.remove(resourceID);
 		if (inLaunch == null) {
-			throw new Exception("Cannot register Worker - unknown resource id " + resourceID);
+			// Worker was not in state "being launched", this can indicate that the TaskManager
+			// in this worker was already registered or that the container was not started
+			// by this resource manager. Simply ignore this resourceID.
+			return null;
 		}
 		return new RegisteredMesosWorkerNode(inLaunch);
 	}
@@ -433,7 +436,12 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				accepted.add(new RegisteredMesosWorkerNode(worker));
 			}
 			else {
-				LOG.info("Mesos worker consolidation does not recognize TaskManager {}.", resourceID);
+				if(isStarted(resourceID)) {
+					LOG.info("TaskManager {} has already been registered at the resource manager.", resourceID);
+				}
+				else {
+					LOG.info("Mesos worker consolidation does not recognize TaskManager {}.", resourceID);
+				}
 			}
 		}
 		return accepted;
@@ -453,10 +461,10 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	}
 
 	/**
-	 * Release the given registered worker.
+	 * Release the given started worker.
 	 */
 	@Override
-	protected void releaseRegisteredWorker(RegisteredMesosWorkerNode worker) {
+	protected void releaseStartedWorker(RegisteredMesosWorkerNode worker) {
 		releaseWorker(worker.task());
 	}
 

@@ -295,13 +295,7 @@ public class MesosFlinkResourceManagerTest {
 						register(Collections.<ResourceID>emptyList());
 
 						// send registration message
-						RegisterResource msg = new RegisterResource(
-							jobManager.actor(),
-							new RegistrationMessages.RegisterTaskManager(
-								extractResourceID(task1),
-								new InstanceConnectionInfo(InetAddress.getLocalHost(), 999),
-								new HardwareDescription(1, 1024, 768, 256),
-								4));
+						NotifyResourceStarted msg = new NotifyResourceStarted(extractResourceID(task1));
 						resourceManager.tell(msg);
 
 						// verify that the internal state was updated
