@@ -8,6 +8,7 @@ import com.netflix.fenzo.functions.Action1;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
+import org.apache.flink.mesos.scheduler.ConnectionMonitor;
 import org.apache.flink.mesos.scheduler.LaunchCoordinator;
 import org.apache.flink.mesos.scheduler.ReconciliationCoordinator;
 import org.apache.flink.mesos.scheduler.SchedulerProxy;
@@ -66,6 +67,8 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 
 	/** Mesos scheduler driver */
 	private SchedulerDriver schedulerDriver;
+
+	private ActorRef connectionMonitor;
 
 	private ActorRef taskRouter;
 
@@ -139,13 +142,21 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		schedulerDriver = initializedMesosConfig.createDriver(schedulerCallbackHandler, false);
 
 		// create supporting actors
+		connectionMonitor = createConnectionMonitor();
 		launchCoordinator = createLaunchCoordinator();
 		reconciliationCoordinator = createReconciliationCoordinator();
 		taskRouter = createTaskRouter();
 
 		recoverWorkers();
 
+		connectionMonitor.tell(new ConnectionMonitor.Start(), self());
 		schedulerDriver.start();
+	}
+
+	protected ActorRef createConnectionMonitor() {
+		return context().actorOf(
+			ConnectionMonitor.createActorProps(ConnectionMonitor.class, config),
+			"connectionMonitor");
 	}
 
 	protected ActorRef createTaskRouter() {
@@ -224,7 +235,6 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	protected void shutdownApplication(ApplicationStatus finalStatus, String optionalDiagnostics) {
 
 		LOG.info("Shutting down and unregistering as a Mesos framework.");
-
 		try {
 			// unregister the framework, which implicitly removes all tasks.
 			schedulerDriver.stop(false);
@@ -491,9 +501,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	 * Called when connected to Mesos as a new framework.
 	 */
 	private void registered(Registered message) {
-
-		LOG.info("Registered with Mesos as framework ID {}.", message.frameworkId().getValue());
-		LOG.debug("   Master Info: {}", message.masterInfo());
+		connectionMonitor.tell(message, self());
 
 		try {
 			workerStore.setFrameworkID(Option.apply(message.frameworkId()));
@@ -512,9 +520,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	 * Called when reconnected to Mesos following a failover event.
 	 */
 	private void reregistered(ReRegistered message) {
-		LOG.info("Re-registered with Mesos.");
-		LOG.debug("   Master Info: {}", message.masterInfo());
-
+		connectionMonitor.tell(message, self());
 		launchCoordinator.tell(message, self());
 		reconciliationCoordinator.tell(message, self());
 		taskRouter.tell(message, self());
@@ -524,6 +530,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	 * Called when disconnected from Mesos.
 	 */
 	private void disconnected(Disconnected message) {
+		connectionMonitor.tell(message, self());
 		launchCoordinator.tell(message, self());
 		reconciliationCoordinator.tell(message, self());
 		taskRouter.tell(message, self());

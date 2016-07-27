@@ -10,6 +10,7 @@ import junit.framework.AssertionFailedError;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
+import org.apache.flink.mesos.scheduler.ConnectionMonitor;
 import org.apache.flink.mesos.scheduler.LaunchCoordinator;
 import org.apache.flink.mesos.scheduler.TaskMonitor;
 import org.apache.flink.mesos.scheduler.messages.*;
@@ -82,6 +83,7 @@ public class MesosFlinkResourceManagerTest {
 	 */
 	static class TestingMesosFlinkResourceManager extends MesosFlinkResourceManager {
 
+		public TestProbe connectionMonitor = new TestProbe(system);
 		public TestProbe taskRouter = new TestProbe(system);
 		public TestProbe launchCoordinator = new TestProbe(system);
 		public TestProbe reconciliationCoordinator = new TestProbe(system);
@@ -100,6 +102,8 @@ public class MesosFlinkResourceManagerTest {
 				taskManagerLaunchContext, maxFailedTasks, numInitialTaskManagers);
 		}
 
+		@Override
+		protected ActorRef createConnectionMonitor() { return connectionMonitor.ref(); }
 		@Override
 		protected ActorRef createTaskRouter() { return taskRouter.ref(); }
 		@Override
@@ -178,6 +182,9 @@ public class MesosFlinkResourceManagerTest {
 					config, mesosConfig, workerStore, retrievalService, tmParams, taskInfo, 0, LOG));
 			resourceManagerInstance = resourceManagerRef.underlyingActor();
 			resourceManager = new AkkaActorGateway(resourceManagerRef, null);
+
+			verify(schedulerDriver).start();
+			resourceManagerInstance.connectionMonitor.expectMsgClass(ConnectionMonitor.Start.class);
 		}
 
 		/**
@@ -592,6 +599,7 @@ public class MesosFlinkResourceManagerTest {
 						resourceManager.tell(new Registered(framework1, masterInfo), resourceManager);
 
 						verify(workerStore).setFrameworkID(Option.apply(framework1));
+						resourceManagerInstance.connectionMonitor.expectMsgClass(Registered.class);
 						resourceManagerInstance.reconciliationCoordinator.expectMsgClass(Registered.class);
 						resourceManagerInstance.launchCoordinator.expectMsgClass(Registered.class);
 						resourceManagerInstance.taskRouter.expectMsgClass(Registered.class);
@@ -623,6 +631,7 @@ public class MesosFlinkResourceManagerTest {
 							.setId("master1").setIp(0).setPort(5050).build();
 						resourceManager.tell(new ReRegistered(masterInfo), resourceManager);
 
+						resourceManagerInstance.connectionMonitor.expectMsgClass(ReRegistered.class);
 						resourceManagerInstance.reconciliationCoordinator.expectMsgClass(ReRegistered.class);
 						resourceManagerInstance.launchCoordinator.expectMsgClass(ReRegistered.class);
 						resourceManagerInstance.taskRouter.expectMsgClass(ReRegistered.class);
@@ -651,6 +660,7 @@ public class MesosFlinkResourceManagerTest {
 
 						resourceManager.tell(new Disconnected(), resourceManager);
 
+						resourceManagerInstance.connectionMonitor.expectMsgClass(Disconnected.class);
 						resourceManagerInstance.reconciliationCoordinator.expectMsgClass(Disconnected.class);
 						resourceManagerInstance.launchCoordinator.expectMsgClass(Disconnected.class);
 						resourceManagerInstance.taskRouter.expectMsgClass(Disconnected.class);

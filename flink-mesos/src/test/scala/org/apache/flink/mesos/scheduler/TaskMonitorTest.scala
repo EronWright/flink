@@ -11,10 +11,13 @@ import org.apache.flink.mesos.scheduler.messages.{Disconnected, Connected, Statu
 import org.apache.flink.runtime.akka.AkkaUtils
 import org.apache.mesos.{SchedulerDriver, Protos}
 import org.apache.mesos.Protos.TaskState._
+import org.junit.runner.RunWith
 import org.mockito.Mockito
 import org.mockito.Mockito._
+import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
+@RunWith(classOf[JUnitRunner])
 class TaskMonitorTest
   extends TestKitBase
     with ImplicitSender

@@ -84,8 +84,6 @@ public class MesosConfiguration {
 		Protos.FrameworkInfo.Builder info = config.frameworkInfo();
 
 		log.info("--------------------------------------------------------------------------------");
-		log.info(" Connecting to Mesos");
-
 		log.info(" Mesos Info:");
 		log.info("    Master URL: {}", config.masterUrl());
 
