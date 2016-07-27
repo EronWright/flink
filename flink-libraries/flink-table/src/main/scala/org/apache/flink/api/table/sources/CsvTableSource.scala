@@ -25,18 +25,21 @@ import org.apache.flink.api.table.{Row, TableException}
 import org.apache.flink.api.table.runtime.io.RowCsvInputFormat
 import org.apache.flink.api.table.typeutils.RowTypeInfo
 import org.apache.flink.core.fs.Path
+import org.apache.flink.streaming.api.datastream.DataStream
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 
 /**
-  * A [[TableSource]] for simple CSV files with a (logically) unlimited number of fields.
+  * A [[BatchTableSource]] and [[StreamTableSource]] for simple CSV files with a
+  * (logically) unlimited number of fields.
   *
   * @param path The path to the CSV file.
   * @param fieldNames The names of the table fields.
   * @param fieldTypes The types of the table fields.
-  * @param fieldDelim The field delimiter, ',' by default.
-  * @param rowDelim The row delimiter, '\n' by default.
-  * @param quoteCharacter An optional quote character for String values, disabled by default.
+  * @param fieldDelim The field delimiter, "," by default.
+  * @param rowDelim The row delimiter, "\n" by default.
+  * @param quoteCharacter An optional quote character for String values, null by default.
   * @param ignoreFirstLine Flag to ignore the first line, false by default.
-  * @param ignoreComments An optional prefix to indicate comments, disabled by default.
+  * @param ignoreComments An optional prefix to indicate comments, null by default.
   * @param lenient Flag to skip records with parse error instead to fail, false by default.
   */
 class CsvTableSource(
@@ -49,7 +52,20 @@ class CsvTableSource(
     ignoreFirstLine: Boolean = false,
     ignoreComments: String = null,
     lenient: Boolean = false)
-  extends BatchTableSource[Row] {
+  extends BatchTableSource[Row]
+  with StreamTableSource[Row] {
+
+  /**
+  * A [[BatchTableSource]] and [[StreamTableSource]] for simple CSV files with a
+  * (logically) unlimited number of fields.
+  *
+  * @param path The path to the CSV file.
+  * @param fieldNames The names of the table fields.
+  * @param fieldTypes The types of the table fields.
+  */
+  def this(path: String, fieldNames: Array[String], fieldTypes: Array[TypeInformation[_]]) =
+    this(path, fieldNames, fieldTypes, CsvInputFormat.DEFAULT_FIELD_DELIMITER,
+      CsvInputFormat.DEFAULT_LINE_DELIMITER, null, false, null, false)
 
   if (fieldNames.length != fieldTypes.length) {
     throw TableException("Number of field names and field types must be equal.")
@@ -59,18 +75,7 @@ class CsvTableSource(
 
   /** Returns the data of the table as a [[DataSet]] of [[Row]]. */
   override def getDataSet(execEnv: ExecutionEnvironment): DataSet[Row] = {
-    val inputFormat = new RowCsvInputFormat(new Path(path), returnType, rowDelim, fieldDelim)
-
-    inputFormat.setSkipFirstLineAsHeader(ignoreFirstLine)
-    inputFormat.setLenient(lenient)
-    if (quoteCharacter != null) {
-      inputFormat.enableQuotedStringParsing(quoteCharacter)
-    }
-    if (ignoreComments != null) {
-      inputFormat.setCommentPrefix(ignoreComments)
-    }
-
-    execEnv.createInput(inputFormat, returnType)
+    execEnv.createInput(createCsvInput(), returnType)
   }
 
   /** Returns the types of the table fields. */
@@ -84,4 +89,24 @@ class CsvTableSource(
 
   /** Returns the [[RowTypeInfo]] for the return type of the [[CsvTableSource]]. */
   override def getReturnType: RowTypeInfo = returnType
+
+  /** Returns the data of the table as a [[DataStream]] of [[Row]]. */
+  override def getDataStream(streamExecEnv: StreamExecutionEnvironment): DataStream[Row] = {
+    streamExecEnv.createInput(createCsvInput(), returnType)
+  }
+
+  private def createCsvInput(): RowCsvInputFormat = {
+    val inputFormat = new RowCsvInputFormat(new Path(path), returnType, rowDelim, fieldDelim)
+
+    inputFormat.setSkipFirstLineAsHeader(ignoreFirstLine)
+    inputFormat.setLenient(lenient)
+    if (quoteCharacter != null) {
+      inputFormat.enableQuotedStringParsing(quoteCharacter)
+    }
+    if (ignoreComments != null) {
+      inputFormat.setCommentPrefix(ignoreComments)
+    }
+
+    inputFormat
+  }
 }

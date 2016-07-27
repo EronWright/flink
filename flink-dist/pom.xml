@@ -107,8 +107,14 @@ under the License.
 			<artifactId>flink-scala-shell_2.10</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-
+    
 		<dependency>
+			<groupId>org.apache.flink</groupId>
+			<artifactId>flink-metrics-jmx</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+
+ 		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-mesos_2.10</artifactId>
 			<version>${project.version}</version>
