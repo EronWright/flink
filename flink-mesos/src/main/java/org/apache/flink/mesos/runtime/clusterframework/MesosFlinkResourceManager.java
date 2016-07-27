@@ -29,8 +29,6 @@ import org.apache.flink.runtime.clusterframework.FlinkResourceManager;
 import org.apache.flink.runtime.clusterframework.messages.FatalErrorOccurred;
 import org.apache.flink.runtime.clusterframework.messages.StopCluster;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
-import org.apache.flink.runtime.instance.ActorGateway;
-import org.apache.flink.runtime.instance.AkkaActorGateway;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
@@ -120,8 +118,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		workerStore.start();
 
 		// create the scheduler driver to communicate with Mesos
-		ActorGateway selfGateway = new AkkaActorGateway(self(), getLeaderSessionID());
-		schedulerCallbackHandler = new SchedulerProxy(selfGateway);
+		schedulerCallbackHandler = new SchedulerProxy(self());
 
 		// register with Mesos
 		FrameworkInfo.Builder frameworkInfo = mesosConfig.frameworkInfo()
@@ -215,12 +212,6 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			// message handled by the generic resource master code
 			super.handleMessage(message);
 		}
-	}
-
-	@Override
-	protected void leaderUpdated() {
-		AkkaActorGateway newGateway = new AkkaActorGateway(self(), getLeaderSessionID());
-		schedulerCallbackHandler.setCurrentLeaderGateway(newGateway);
 	}
 
 	/**

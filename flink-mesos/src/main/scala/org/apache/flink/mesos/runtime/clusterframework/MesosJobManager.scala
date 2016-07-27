@@ -4,6 +4,7 @@ import java.util.concurrent.ExecutorService
 
 import akka.actor.ActorRef
 import org.apache.flink.configuration.{Configuration => FlinkConfiguration}
+import org.apache.flink.metrics.MetricRegistry
 import org.apache.flink.runtime.checkpoint.{CheckpointRecoveryFactory, SavepointStore}
 import org.apache.flink.runtime.clusterframework.ContaineredJobManager
 import org.apache.flink.runtime.execution.librarycache.BlobLibraryCacheManager
@@ -41,7 +42,8 @@ class MesosJobManager(flinkConfiguration: FlinkConfiguration,
                       submittedJobGraphs : SubmittedJobGraphStore,
                       checkpointRecoveryFactory : CheckpointRecoveryFactory,
                       savepointStore: SavepointStore,
-                      jobRecoveryTimeout: FiniteDuration)
+                      jobRecoveryTimeout: FiniteDuration,
+                      metricsRegistry: Option[MetricRegistry])
   extends ContaineredJobManager(
     flinkConfiguration,
     executorService,
@@ -55,7 +57,8 @@ class MesosJobManager(flinkConfiguration: FlinkConfiguration,
     submittedJobGraphs,
     checkpointRecoveryFactory,
     savepointStore,
-    jobRecoveryTimeout) {
+    jobRecoveryTimeout,
+    metricsRegistry) {
 
   val jobPollingInterval: FiniteDuration = 5 seconds
 

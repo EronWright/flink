@@ -169,7 +169,7 @@ class TaskMonitor(
 object TaskMonitor {
 
   val RETRY_INTERVAL = (5 seconds)
-  val LAUNCH_TIMEOUT = (10 seconds)
+  val LAUNCH_TIMEOUT = (30 seconds)
 
   // ------------------------------------------------------------------------
   // State

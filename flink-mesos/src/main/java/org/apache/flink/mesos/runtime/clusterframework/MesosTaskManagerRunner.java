@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.security.PrivilegedAction;
 import java.util.Map;
 
-import org.apache.flink.client.CliFrontend;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.apache.flink.runtime.util.EnvironmentInformation;
@@ -39,12 +39,10 @@ public class MesosTaskManagerRunner {
 			configuration = TaskManager.parseArgsAndLoadConfig(args);
 
 			// add dynamic properties to TaskManager configuration.
-			final Map<String, String> dynamicProperties =
-				CliFrontend.getDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
+			final Configuration dynamicProperties =
+				FlinkMesosSessionCli.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
 			LOG.debug("Mesos dynamic properties: {}", dynamicProperties);
-			for (Map.Entry<String, String> property : dynamicProperties.entrySet()) {
-				configuration.setString(property.getKey(), property.getValue());
-			}
+			configuration.addAll(dynamicProperties);
 		}
 		catch (Throwable t) {
 			LOG.error(t.getMessage(), t);

@@ -178,14 +178,6 @@ class TaskMonitorTest
           parent.expectMsgType[Reconcile]
         }
       }
-      "StateTimeout" which {
-        "transitions to Killing" in new Context {
-          fsm.setState(Reconciling, StateData(Launched(task._1, slave._1)))
-          fsm ! StateTimeout
-          fsm.stateName should be (Killing)
-          fsm.stateData should be (StateData(Launched(task._1, slave._1)))
-        }
-      }
       behave like handlesStatusUpdate(Reconciling)
       behave like handlesDisconnect(Reconciling)
       behave like handlesRelease(Reconciling)

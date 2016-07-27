@@ -289,7 +289,7 @@ public class MesosFlinkResourceManagerTest {
 
 						// send registration message
 						RegisterResource msg = new RegisterResource(
-							getTestActor(),
+							jobManager.actor(),
 							new RegistrationMessages.RegisterTaskManager(
 								extractResourceID(task1),
 								new InstanceConnectionInfo(InetAddress.getLocalHost(), 999),

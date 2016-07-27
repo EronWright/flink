@@ -3,8 +3,8 @@ package org.apache.flink.mesos.runtime.clusterframework;
 import com.netflix.fenzo.ConstraintEvaluator;
 import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.VMTaskFitnessCalculator;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.flink.client.CliFrontend;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
 import org.apache.flink.mesos.scheduler.LaunchCoordinator;
 import org.apache.mesos.Protos;
 
@@ -76,13 +76,11 @@ public class MesosWorkerLaunchContext implements TaskRequest {
 		taskInfo.getCommandBuilder().getEnvironmentBuilder()
 			.addVariables(variable(MesosConfigKeys.ENV_FLINK_CONTAINER_ID, taskID.getValue()));
 
-		String[] dynamicProperties = new String[] {
-			"taskmanager.rpc.port=0", //9870
-			"taskmanager.data.port=0" //9871
-		};
+		Configuration dynamicProperties = new Configuration();
+		dynamicProperties.setInteger("taskmanager.rpc.port", 0);  //9870
+		dynamicProperties.setInteger("taskmanager.data.port", 0); //9871
 
-		String dynamicPropertiesEncoded = StringUtils.join(dynamicProperties,
-			CliFrontend.YARN_DYNAMIC_PROPERTIES_SEPARATOR);
+		String dynamicPropertiesEncoded = FlinkMesosSessionCli.encodeDynamicProperties(dynamicProperties);
 
 		taskInfo.getCommandBuilder().getEnvironmentBuilder()
 			.addVariables(variable(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES, dynamicPropertiesEncoded));

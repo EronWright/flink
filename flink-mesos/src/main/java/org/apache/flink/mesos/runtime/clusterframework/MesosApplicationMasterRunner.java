@@ -5,11 +5,11 @@ import akka.actor.ActorSystem;
 import akka.actor.Props;
 
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.flink.client.CliFrontend;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.configuration.IllegalConfigurationException;
+import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
 import org.apache.flink.mesos.runtime.clusterframework.store.StandaloneMesosWorkerStore;
 import org.apache.flink.mesos.runtime.clusterframework.store.ZooKeeperMesosWorkerStore;
@@ -47,6 +47,9 @@ import java.security.PrivilegedAction;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+
+import static org.apache.flink.mesos.Utils.uri;
+import static org.apache.flink.mesos.Utils.variable;
 
 /**
  * This class is the executable entry point for the Mesos Application Master.
@@ -160,8 +163,8 @@ public class MesosApplicationMasterRunner {
 			final String appMasterHostname = InetAddress.getLocalHost().getHostName();
 
 			// Flink configuration
-			final Map<String, String> dynamicProperties =
-				CliFrontend.getDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
+			final Configuration dynamicProperties =
+				FlinkMesosSessionCli.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
 			LOG.debug("Mesos dynamic properties: {}", dynamicProperties);
 
 			final Configuration config = createConfiguration(workingDir, dynamicProperties);
@@ -402,7 +405,7 @@ public class MesosApplicationMasterRunner {
 	 * @return The configuration to be used by the TaskManagers.
 	 */
 	@SuppressWarnings("deprecation")
-	private static Configuration createConfiguration(String baseDirectory, Map<String, String> additional) {
+	private static Configuration createConfiguration(String baseDirectory, Configuration additional) {
 		LOG.info("Loading config from directory " + baseDirectory);
 
 		GlobalConfiguration.loadConfiguration(baseDirectory);
@@ -411,9 +414,7 @@ public class MesosApplicationMasterRunner {
 		configuration.setString(ConfigConstants.FLINK_BASE_DIR_PATH_KEY, baseDirectory);
 
 		// add dynamic properties to JobManager configuration.
-		for (Map.Entry<String, String> property : additional.entrySet()) {
-			configuration.setString(property.getKey(), property.getValue());
-		}
+		configuration.addAll(additional);
 
 		return configuration;
 	}
@@ -545,6 +546,9 @@ public class MesosApplicationMasterRunner {
 		String clientUsername = env.get(MesosConfigKeys.ENV_CLIENT_USERNAME);
 		require(clientUsername != null, "Environment variable %s not set", MesosConfigKeys.ENV_CLIENT_USERNAME);
 
+		String classPathString = env.get(MesosConfigKeys.ENV_FLINK_CLASSPATH);
+		require(classPathString != null, "Environment variable %s not set", MesosConfigKeys.ENV_FLINK_CLASSPATH);
+
 		// TODO configure the task request
 		int cpus = taskManagerConfig.getInteger(ConfigConstants.MESOS_RESOURCEMANAGER_TASKS_CPUS, Math.max(tmParams.numSlots(), 1));
 
@@ -583,7 +587,7 @@ public class MesosApplicationMasterRunner {
 		for (Map.Entry<String, String> entry : tmParams.taskManagerEnv().entrySet()) {
 			envBuilder.addVariables(variable(entry.getKey(), entry.getValue()));
 		}
-		envBuilder.addVariables(variable(MesosConfigKeys.ENV_CLASSPATH, "classes/:*"));
+		envBuilder.addVariables(variable(MesosConfigKeys.ENV_CLASSPATH, classPathString));
 		envBuilder.addVariables(variable(MesosConfigKeys.ENV_CLIENT_USERNAME, clientUsername));
 
 		cmd.setEnvironment(envBuilder);
@@ -591,20 +595,5 @@ public class MesosApplicationMasterRunner {
 		info.setCommand(cmd);
 
 		return info;
-	}
-
-	private static Protos.CommandInfo.URI uri(URL url, boolean cacheable) {
-		return Protos.CommandInfo.URI.newBuilder()
-			.setValue(url.toExternalForm())
-			.setExtract(false)
-			.setCache(cacheable)
-			.build();
-	}
-
-	private static Protos.Environment.Variable variable(String name, String value) {
-		return Protos.Environment.Variable.newBuilder()
-			.setName(name)
-			.setValue(value)
-			.build();
 	}
 }

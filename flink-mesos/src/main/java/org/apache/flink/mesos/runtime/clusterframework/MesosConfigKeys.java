@@ -16,6 +16,7 @@ public class MesosConfigKeys {
 	public static final String ENV_DYNAMIC_PROPERTIES = "_DYNAMIC_PROPERTIES";
 	public static final String ENV_FLINK_CONTAINER_ID = "_FLINK_CONTAINER_ID";
 	public static final String ENV_FLINK_TMP_DIR = "_FLINK_TMP_DIR";
+	public static final String ENV_FLINK_CLASSPATH = "_FLINK_CLASSPATH";
 	public static final String ENV_CLASSPATH = "CLASSPATH";
 	public static final String ENV_MESOS_SANDBOX = "MESOS_SANDBOX";
 	public static final String ENV_SESSION_ID = "_CLIENT_SESSION_ID";

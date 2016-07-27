@@ -24,6 +24,7 @@ import akka.actor.ActorRef
 
 import org.apache.flink.api.common.JobID
 import org.apache.flink.configuration.{Configuration => FlinkConfiguration, ConfigConstants}
+import org.apache.flink.metrics.MetricRegistry
 import org.apache.flink.runtime.checkpoint.{SavepointStore, CheckpointRecoveryFactory}
 import org.apache.flink.runtime.clusterframework.ApplicationStatus
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyFactory
@@ -69,7 +70,8 @@ abstract class ContaineredJobManager(
                       submittedJobGraphs : SubmittedJobGraphStore,
                       checkpointRecoveryFactory : CheckpointRecoveryFactory,
                       savepointStore: SavepointStore,
-                      jobRecoveryTimeout: FiniteDuration)
+                      jobRecoveryTimeout: FiniteDuration,
+                      metricsRegistry: Option[MetricRegistry])
   extends JobManager(
     flinkConfiguration,
     executorService,
@@ -83,7 +85,8 @@ abstract class ContaineredJobManager(
     submittedJobGraphs,
     checkpointRecoveryFactory,
     savepointStore,
-    jobRecoveryTimeout) {
+    jobRecoveryTimeout,
+    metricsRegistry) {
 
   val jobPollingInterval: FiniteDuration
 
@@ -108,7 +111,7 @@ abstract class ContaineredJobManager(
 
     case msg: ShutdownClusterAfterJob =>
       val jobId = msg.jobId()
-      log.info(s"JM will shut down session when job $jobId has finished.")
+      log.info(s"ApplicationMaster will shut down session when job $jobId has finished.")
       stopWhenJobFinished = jobId
       // trigger regular job status messages (if this is a dedicated/per-job cluster)
       if (stopWhenJobFinished != null) {
@@ -132,9 +135,9 @@ abstract class ContaineredJobManager(
       )
 
     case jnf: JobNotFound =>
-      log.warn(s"Job with ID ${jnf.jobID} not found in JobManager")
+      log.debug(s"Job with ID ${jnf.jobID} not found in JobManager")
       if (stopWhenJobFinished == null) {
-        log.warn("The JM didn't expect to receive this message")
+        log.warn("The ApplicationMaster didn't expect to receive this message")
       }
 
     case jobStatus: CurrentJobStatus =>
