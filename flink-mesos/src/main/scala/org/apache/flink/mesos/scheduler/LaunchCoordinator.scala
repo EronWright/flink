@@ -8,7 +8,7 @@ import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
 import org.apache.mesos.Protos.TaskInfo
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
@@ -25,7 +25,7 @@ import scala.concurrent.duration._
 class LaunchCoordinator(
     manager: ActorRef,
     config: Configuration,
-    schedulerDriver: MesosSchedulerDriver,
+    schedulerDriver: SchedulerDriver,
     optimizerBuilder: TaskSchedulerBuilder
   ) extends Actor with LoggingFSM[TaskState, GatherData] {
 
@@ -286,7 +286,7 @@ object LaunchCoordinator {
     actorClass: Class[T],
     manager: ActorRef,
     flinkConfig: Configuration,
-    schedulerDriver: MesosSchedulerDriver,
+    schedulerDriver: SchedulerDriver,
     optimizerBuilder: TaskSchedulerBuilder): Props = {
 
     Props.create(actorClass, manager, flinkConfig, schedulerDriver, optimizerBuilder)

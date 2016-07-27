@@ -3,6 +3,7 @@ package org.apache.flink.mesos.util;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Scheduler;
+import org.apache.mesos.SchedulerDriver;
 import org.slf4j.Logger;
 import scala.Option;
 
@@ -51,7 +52,7 @@ public class MesosConfiguration {
 	 * @param implicitAcknowledgements whether to configure the driver for implicit implicit acknowledgements.
      * @return a scheduler driver.
      */
-	public MesosSchedulerDriver createDriver(Scheduler scheduler, boolean implicitAcknowledgements) {
+	public SchedulerDriver createDriver(Scheduler scheduler, boolean implicitAcknowledgements) {
 		MesosSchedulerDriver schedulerDriver;
 		if(this.credential().isDefined()) {
 			schedulerDriver =

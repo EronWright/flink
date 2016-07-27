@@ -8,7 +8,7 @@ import org.apache.flink.mesos.scheduler.ReconciliationCoordinator.Reconcile
 import org.apache.flink.mesos.scheduler.TaskMonitor._
 import org.apache.flink.mesos.scheduler.messages.{Connected, Disconnected, StatusUpdate}
 import org.apache.mesos.Protos.TaskState._
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 
 import scala.PartialFunction.empty
 import scala.concurrent.duration._
@@ -27,7 +27,7 @@ import scala.concurrent.duration._
   */
 class TaskMonitor(
     flinkConfig: Configuration,
-    schedulerDriver: MesosSchedulerDriver,
+    schedulerDriver: SchedulerDriver,
     goalState: TaskGoalState) extends Actor with LoggingFSM[TaskMonitorState,StateData] {
 
   val LOG = Logger(getClass)
@@ -221,9 +221,6 @@ object TaskMonitor {
   //  Utils
   // ------------------------------------------------------------------------
 
-  private def logStatusUpdate(log: Logger, taskID: Protos.TaskID, msg: StatusUpdate): Unit = {
-    log.debug(s"Status update received for Mesos task ${taskID.getValue}: $msg")
-  }
   /**
     * Creates the properties for the TaskMonitor actor.
     *
@@ -236,7 +233,7 @@ object TaskMonitor {
     */
   def createActorProps[T <: TaskMonitor](actorClass: Class[T],
                                          flinkConfig: Configuration,
-                                         schedulerDriver: MesosSchedulerDriver,
+                                         schedulerDriver: SchedulerDriver,
                                          goalState: TaskGoalState): Props = {
     Props.create(actorClass, flinkConfig, schedulerDriver, goalState)
   }

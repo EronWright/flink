@@ -30,9 +30,9 @@ import org.apache.flink.runtime.clusterframework.messages.FatalErrorOccurred;
 import org.apache.flink.runtime.clusterframework.messages.StopCluster;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
-import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.FrameworkInfo;
+import org.apache.mesos.SchedulerDriver;
 import org.slf4j.Logger;
 import scala.Option;
 
@@ -65,7 +65,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	private SchedulerProxy schedulerCallbackHandler;
 
 	/** Mesos scheduler driver */
-	private MesosSchedulerDriver schedulerDriver;
+	private SchedulerDriver schedulerDriver;
 
 	private ActorRef taskRouter;
 

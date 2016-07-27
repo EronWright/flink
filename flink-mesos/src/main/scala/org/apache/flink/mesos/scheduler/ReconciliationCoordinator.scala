@@ -6,7 +6,7 @@ import akka.actor.{Actor, LoggingFSM, Props}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.ReconciliationCoordinator._
 import org.apache.flink.mesos.scheduler.messages.{Connected, Disconnected, StatusUpdate}
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
@@ -20,7 +20,7 @@ import scala.concurrent.duration._
   */
 class ReconciliationCoordinator(
     flinkConfig: Configuration,
-    schedulerDriver: MesosSchedulerDriver) extends Actor with LoggingFSM[TaskState,ReconciliationData] {
+    schedulerDriver: SchedulerDriver) extends Actor with LoggingFSM[TaskState,ReconciliationData] {
 
   startWith(Suspended, ReconciliationData())
 
@@ -149,7 +149,7 @@ object ReconciliationCoordinator {
   def createActorProps[T <: ReconciliationCoordinator](
       actorClass: Class[T],
       flinkConfig: Configuration,
-      schedulerDriver: MesosSchedulerDriver): Props = {
+      schedulerDriver: SchedulerDriver): Props = {
 
     Props.create(actorClass, flinkConfig, schedulerDriver)
   }

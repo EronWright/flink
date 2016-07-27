@@ -28,7 +28,7 @@ import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.flink.runtime.messages.RegistrationMessages;
 import org.apache.flink.runtime.testingUtils.TestingUtils;
 import org.apache.flink.runtime.util.LeaderRetrievalUtils;
-import org.apache.mesos.MesosSchedulerDriver;
+import org.apache.mesos.SchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Scheduler;
 import org.junit.AfterClass;
@@ -124,7 +124,7 @@ public class MesosFlinkResourceManagerTest {
 		public LeaderRetrievalService retrievalService;
 		public MesosConfiguration mesosConfig;
 		public MesosWorkerStore workerStore;
-		public MesosSchedulerDriver schedulerDriver;
+		public SchedulerDriver schedulerDriver;
 		public TestingMesosFlinkResourceManager resourceManagerInstance;
 		public ActorGateway resourceManager;
 
@@ -148,7 +148,7 @@ public class MesosFlinkResourceManagerTest {
 				retrievalService = LeaderRetrievalUtils.createLeaderRetrievalService(config, jobManager.actor());
 
 				// scheduler driver
-				schedulerDriver = mock(MesosSchedulerDriver.class);
+				schedulerDriver = mock(SchedulerDriver.class);
 
 				// config
 				mesosConfig = mock(MesosConfiguration.class);

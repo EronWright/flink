@@ -12,7 +12,7 @@ import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
 import org.apache.flink.runtime.akka.AkkaUtils
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 import org.junit.runner.RunWith
 import org.mockito.Mockito.{verify, _}
 import org.mockito.invocation.InvocationOnMock
@@ -192,7 +192,7 @@ class LaunchCoordinatorTest
   class Context {
     val optimizer = taskScheduler()
     val optimizerBuilder = taskSchedulerBuilder(optimizer)
-    val schedulerDriver = mock(classOf[MesosSchedulerDriver])
+    val schedulerDriver = mock(classOf[SchedulerDriver])
     val trace = Mockito.inOrder(schedulerDriver)
     val fsm = TestFSMRef(new LaunchCoordinator(testActor, config, schedulerDriver, optimizerBuilder))
 

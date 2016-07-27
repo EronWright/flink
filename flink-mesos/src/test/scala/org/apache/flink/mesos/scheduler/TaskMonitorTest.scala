@@ -9,7 +9,7 @@ import org.apache.flink.mesos.TestFSMUtils
 import org.apache.flink.mesos.scheduler.ReconciliationCoordinator.Reconcile
 import org.apache.flink.mesos.scheduler.messages.{Disconnected, Connected, StatusUpdate}
 import org.apache.flink.runtime.akka.AkkaUtils
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 import org.apache.mesos.Protos.TaskState._
 import org.mockito.Mockito
 import org.mockito.Mockito._
@@ -44,7 +44,7 @@ class TaskMonitorTest
   }
 
   class Context {
-    val schedulerDriver = mock(classOf[MesosSchedulerDriver])
+    val schedulerDriver = mock(classOf[SchedulerDriver])
     val trace = Mockito.inOrder(schedulerDriver)
     val slave = randomSlave
     val task = randomTask(slave._1)

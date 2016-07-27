@@ -6,7 +6,7 @@ import org.apache.flink.mesos.scheduler.ReconciliationCoordinator.Reconcile
 import org.apache.flink.mesos.scheduler.TaskMonitor.{TaskGoalState, TaskGoalStateUpdated, TaskTerminated}
 import org.apache.flink.mesos.scheduler.Tasks._
 import org.apache.flink.mesos.scheduler.messages._
-import org.apache.mesos.{MesosSchedulerDriver, Protos}
+import org.apache.mesos.{SchedulerDriver, Protos}
 
 import scala.collection.mutable.{Map => MutableMap}
 
@@ -17,7 +17,7 @@ import scala.collection.mutable.{Map => MutableMap}
   */
 class Tasks[M <: TaskMonitor](
      flinkConfig: Configuration,
-     schedulerDriver: MesosSchedulerDriver,
+     schedulerDriver: SchedulerDriver,
      taskMonitorClass: Class[M]) extends Actor {
 
   /**
@@ -88,7 +88,7 @@ object Tasks {
   def createActorProps[T <: Tasks[M], M <: TaskMonitor](
       actorClass: Class[T],
       flinkConfig: Configuration,
-      schedulerDriver: MesosSchedulerDriver,
+      schedulerDriver: SchedulerDriver,
       taskMonitorClass: Class[M]): Props = {
 
     Props.create(actorClass, flinkConfig, schedulerDriver, taskMonitorClass)
