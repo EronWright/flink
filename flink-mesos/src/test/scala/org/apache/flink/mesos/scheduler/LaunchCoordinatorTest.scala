@@ -8,6 +8,7 @@ import akka.testkit._
 import com.netflix.fenzo.TaskRequest.{AssignedResources, NamedResourceSetRequest}
 import com.netflix.fenzo._
 import com.netflix.fenzo.functions.{Action1, Action2}
+import org.apache.flink.api.java.tuple.{Tuple2=>FlinkTuple2}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
@@ -215,6 +216,26 @@ class LaunchCoordinatorTest
   def inState = afterWord("in state")
   def handle = afterWord("handle")
 
+  def handlesAssignments(state: TaskState) = {
+    "Unassign" which {
+      s"stays in $state with updated optimizer state" in new Context {
+        optimizer.getTaskAssigner.call(task1._2.taskRequest, slave1._2)
+        fsm.setState(state)
+        fsm ! Unassign(task1._1, slave1._2)
+        verify(optimizer.getTaskUnAssigner).call(task1._1.getValue, slave1._2)
+        fsm.stateName should be (state)
+      }
+    }
+    "Assign" which {
+      s"stays in $state with updated optimizer state" in new Context {
+        fsm.setState(state)
+        fsm ! Assign(Seq(new FlinkTuple2(task1._2.taskRequest, slave1._2)).asJava)
+        verify(optimizer.getTaskAssigner).call(MM.any(), MM.any())
+        fsm.stateName should be (state)
+      }
+    }
+  }
+
   "The LaunchCoordinator" when inState {
 
     "Suspended" should handle {
@@ -239,15 +260,8 @@ class LaunchCoordinatorTest
           fsm.stateData.tasks should contain only (task1._2, task2._2)
         }
       }
-      "Unassign" which {
-        "stays in Suspended with updated optimizer state" in new Context {
-          optimizer.getTaskAssigner.call(task1._2.taskRequest, slave1._2)
-          fsm.setState(Suspended)
-          fsm ! Unassign(task1._1, slave1._2)
-          verify(optimizer.getTaskUnAssigner).call(task1._1.getValue, slave1._2)
-          fsm.stateName should be (Suspended)
-        }
-      }
+
+      behave like handlesAssignments(Suspended)
     }
 
     "Idle" should handle {
@@ -275,15 +289,8 @@ class LaunchCoordinatorTest
           fsm.stateData.tasks should contain only (task1._2, task2._2)
         }
       }
-      "Unassign" which {
-        "stays in Idle with updated optimizer state" in new Context {
-          optimizer.getTaskAssigner.call(task1._2.taskRequest, slave1._2)
-          fsm.setState(Idle)
-          fsm ! Unassign(task1._1, slave1._2)
-          verify(optimizer.getTaskUnAssigner).call(task1._1.getValue, slave1._2)
-          fsm.stateName should be (Idle)
-        }
-      }
+
+      behave like handlesAssignments(Idle)
     }
 
     "GatheringOffers" should handle {
@@ -347,15 +354,6 @@ class LaunchCoordinatorTest
           fsm.stateData.tasks should contain only (task1._2)
         }
       }
-      "Unassign" which {
-        "stays in GatheringOffers with updated optimizer state" in new Context {
-          optimizer.getTaskAssigner.call(task1._2.taskRequest, slave1._2)
-          fsm.setState(GatheringOffers)
-          fsm ! Unassign(task1._1, slave1._2)
-          verify(optimizer.getTaskUnAssigner).call(task1._1.getValue, slave1._2)
-          fsm.stateName should be (GatheringOffers)
-        }
-      }
       "StateTimeout" which {
         "sends AcceptOffers message for matched tasks" in new Context {
           when(optimizer.scheduleOnce(MM.any(), MM.any())) thenAnswer scheduleOnce { (requests, newLeases) =>
@@ -401,6 +399,8 @@ class LaunchCoordinatorTest
           verify(schedulerDriver).declineOffer(slave1._3.getId)
         }
       }
+
+      behave like handlesAssignments(GatheringOffers)
     }
   }
 }

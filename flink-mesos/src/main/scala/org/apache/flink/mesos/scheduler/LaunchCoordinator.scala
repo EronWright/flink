@@ -4,6 +4,7 @@ import akka.actor.{Actor, ActorRef, LoggingFSM, Props}
 import com.netflix.fenzo._
 import com.netflix.fenzo.functions.Action1
 import com.netflix.fenzo.plugins.VMLeaseObject
+import org.apache.flink.api.java.tuple.{Tuple2=>FlinkTuple2}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
@@ -168,6 +169,13 @@ class LaunchCoordinator(
       optimizer.expireLease(offer.offerId().getValue)
       stay using data.copy(newOffers = data.newOffers.filterNot(_.getId == offer.offerId()))
 
+    case Event(msg: Assign, _) =>
+      // recovering an earlier task assignment
+      for(task <- msg.tasks.asScala) {
+        optimizer.getTaskAssigner.call(task.f0, task.f1)
+      }
+      stay()
+
     case Event(msg: Unassign, _) =>
       // planning to terminate a task - unassign it from its host in the optimizer's state
       optimizer.getTaskUnAssigner.call(msg.taskID.getValue, msg.hostname)
@@ -196,6 +204,7 @@ object LaunchCoordinator {
 
   /**
     * FSM state data.
+    *
     * @param tasks the tasks to launch.
     * @param newOffers new offers not yet handed to the optimizer.
     */
@@ -218,9 +227,15 @@ object LaunchCoordinator {
   }
 
   /**
+    * Informs the launch coordinator that some task(s) are assigned to a host (for planning purposes).
+    *
+    * This is sent by the RM in recovery procedures to recover the optimizer state.  In normal operation,
+    * the launch coordinator itself updates the optimizer state.
+    */
+  case class Assign(tasks: java.util.List[FlinkTuple2[TaskRequest, String]])
+
+  /**
     * Informs the launch coordinator that some task is no longer assigned to a host (for planning purposes).
-    * @param taskID the task ID.
-    * @param hostname the hostname.
     */
   case class Unassign(taskID: Protos.TaskID, hostname: String)
 

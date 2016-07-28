@@ -2,9 +2,11 @@ package org.apache.flink.mesos.runtime.clusterframework;
 
 import akka.actor.ActorRef;
 import akka.actor.Props;
+import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.TaskScheduler;
 import com.netflix.fenzo.VirtualMachineLease;
 import com.netflix.fenzo.functions.Action1;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
@@ -279,6 +281,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		if (!tasksFromPreviousAttempts.isEmpty()) {
 			LOG.info("Retrieved {} TaskManagers from previous attempt", tasksFromPreviousAttempts.size());
 
+			List<Tuple2<TaskRequest,String>> toAssign = new ArrayList<>(tasksFromPreviousAttempts.size());
 			List<LaunchCoordinator.TaskSpecification> toLaunch = new ArrayList<>(tasksFromPreviousAttempts.size());
 
 			for (final MesosWorkerStore.Worker worker : tasksFromPreviousAttempts) {
@@ -290,6 +293,8 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 						break;
 					case Launched:
 						workersInLaunch.put(extractResourceID(worker.taskID()), worker);
+						MesosWorkerLaunchContext tc2 = new MesosWorkerLaunchContext(taskManagerLaunchContext, worker.taskID());
+						toAssign.add(new Tuple2<TaskRequest,String>(tc2, worker.hostname().get()));
 						break;
 					case Released:
 						workersBeingReturned.put(extractResourceID(worker.taskID()), worker);
@@ -298,6 +303,10 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				taskRouter.tell(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(worker)), self());
 			}
 
+			// tell the launch coordinator about prior assignments
+			if(toAssign.size() >= 1) {
+				launchCoordinator.tell(new LaunchCoordinator.Assign(toAssign), self());
+			}
 			// tell the launch coordinator to launch any new tasks
 			if(toLaunch.size() >= 1) {
 				launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());

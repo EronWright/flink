@@ -7,6 +7,7 @@ import akka.testkit.JavaTestKit;
 import akka.testkit.TestActorRef;
 import akka.testkit.TestProbe;
 import junit.framework.AssertionFailedError;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
@@ -48,8 +49,7 @@ import java.util.HashMap;
 
 import static org.apache.flink.mesos.runtime.clusterframework.MesosFlinkResourceManager.extractGoalState;
 import static org.apache.flink.mesos.runtime.clusterframework.MesosFlinkResourceManager.extractResourceID;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.hasEntry;
+import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyBoolean;
@@ -234,6 +234,11 @@ public class MesosFlinkResourceManagerTest {
 						assertThat(resourceManagerInstance.workersInLaunch, hasEntry(extractResourceID(task2), worker2));
 						assertThat(resourceManagerInstance.workersBeingReturned, hasEntry(extractResourceID(task3), worker3));
 						resourceManagerInstance.taskRouter.expectMsgClass(TaskMonitor.TaskGoalStateUpdated.class);
+						LaunchCoordinator.Assign actualAssign =
+							resourceManagerInstance.launchCoordinator.expectMsgClass(LaunchCoordinator.Assign.class);
+						assertThat(actualAssign.tasks(), hasSize(1));
+						assertThat(actualAssign.tasks().get(0).f0.getId(), equalTo(task2.getValue()));
+						assertThat(actualAssign.tasks().get(0).f1, equalTo(slave1host));
 						resourceManagerInstance.launchCoordinator.expectMsgClass(LaunchCoordinator.Launch.class);
 
 						register(Collections.<ResourceID>emptyList());
@@ -324,6 +329,7 @@ public class MesosFlinkResourceManagerTest {
 						when(workerStore.getFrameworkID()).thenReturn(Option.apply(framework1));
 						when(workerStore.recoverWorkers()).thenReturn(singletonList(worker1));
 						initialize();
+						resourceManagerInstance.launchCoordinator.expectMsgClass(LaunchCoordinator.Assign.class);
 						register(singletonList(extractResourceID(task1)));
 
 						// release the registered worker
