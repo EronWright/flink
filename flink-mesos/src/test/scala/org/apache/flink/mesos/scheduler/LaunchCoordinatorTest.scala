@@ -72,26 +72,15 @@ class LaunchCoordinatorTest
       }
     }
 
-    def generateTaskInfo = {
-      Protos.TaskInfo.newBuilder
-        .setTaskId(taskID).setName(taskID.getValue).setCommand(Protos.CommandInfo.newBuilder.setValue("whoami"))
-    }
-
-    def generateTaskBuilder = {
-      val taskInfo = generateTaskInfo
-      new TaskBuilder() {
-        override def setSlaveID(slaveId: SlaveID): TaskBuilder = {
-          taskInfo.setSlaveId(slaveId)
-          this
-        }
-        override def setTaskAssignmentResult(taskAssignment: TaskAssignmentResult): TaskBuilder = this
-        override def build(): TaskInfo = taskInfo.build()
-      }
-    }
-
-    val task: TaskSpecification = new TaskSpecification() {
+    val task: LaunchableTask = new LaunchableTask() {
       override def taskRequest: TaskRequest = generateTaskRequest
-      override def launch: TaskBuilder = generateTaskBuilder
+      override def launch(slaveId: SlaveID, taskAssignment: TaskAssignmentResult): Protos.TaskInfo = {
+        Protos.TaskInfo.newBuilder
+          .setTaskId(taskID).setName(taskID.getValue)
+          .setCommand(Protos.CommandInfo.newBuilder.setValue("whoami"))
+          .setSlaveId(slaveId)
+          .build()
+      }
     }
 
     (taskID, task)

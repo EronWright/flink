@@ -121,7 +121,7 @@ class LaunchCoordinator(
       stay using data.copy(newOffers = data.newOffers ++ offers.offers().asScala)
 
     case Event(StateTimeout, data: GatherData) =>
-      val remaining = MutableMap(data.tasks.map(spec => spec.taskRequest.getId -> spec):_*)
+      val remaining = MutableMap(data.tasks.map(t => t.taskRequest.getId -> t):_*)
 
       // attempt to assign the outstanding tasks using the optimizer
       val result = optimizer.scheduleOnce(
@@ -208,21 +208,7 @@ object LaunchCoordinator {
     * @param tasks the tasks to launch.
     * @param newOffers new offers not yet handed to the optimizer.
     */
-  case class GatherData(tasks: Seq[TaskSpecification] = Nil, newOffers: Seq[Protos.Offer] = Nil)
-
-  /**
-    * Specifies the task requirements and Mesos task information.
-    */
-  abstract class TaskSpecification {
-    def taskRequest: TaskRequest
-    def launch: TaskBuilder
-  }
-
-  abstract class TaskBuilder {
-    def setSlaveID(slaveId: Protos.SlaveID): TaskBuilder
-    def setTaskAssignmentResult(taskAssignment: TaskAssignmentResult): TaskBuilder
-    def build(): Protos.TaskInfo
-  }
+  case class GatherData(tasks: Seq[LaunchableTask] = Nil, newOffers: Seq[Protos.Offer] = Nil)
 
   // ------------------------------------------------------------------------
   //  Messages
@@ -231,7 +217,7 @@ object LaunchCoordinator {
   /**
     * Instructs the launch coordinator to launch some new task.
     */
-  case class Launch(tasks: java.util.List[TaskSpecification]) {
+  case class Launch(tasks: java.util.List[LaunchableTask]) {
     require(tasks.size() >= 1, "Launch message must contain at least one task")
   }
 
@@ -265,13 +251,10 @@ object LaunchCoordinator {
   private def processAssignments(
       slaveId: Protos.SlaveID,
       assignments: VMAssignmentResult,
-      allTasks: Map[String, TaskSpecification]): Seq[Protos.Offer.Operation] = {
+      allTasks: Map[String, LaunchableTask]): Seq[Protos.Offer.Operation] = {
 
     def taskInfo(assignment: TaskAssignmentResult): Protos.TaskInfo = {
-      allTasks(assignment.getTaskId).launch
-        .setSlaveID(slaveId)
-        .setTaskAssignmentResult(assignment)
-        .build()
+      allTasks(assignment.getTaskId).launch(slaveId, assignment)
     }
 
     val launches = Protos.Offer.Operation.newBuilder().setType(Protos.Offer.Operation.Type.LAUNCH).setLaunch(
