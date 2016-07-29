@@ -56,7 +56,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	private final MesosConfiguration mesosConfig;
 
 	/** The TaskManager container parameters (like container memory size) */
-	private final ContaineredTaskManagerParameters taskManagerParameters;
+	private final MesosTaskManagerParameters taskManagerParameters;
 
 	/** Context information used to start a TaskManager Java process */
 	private final Protos.TaskInfo.Builder taskManagerLaunchContext;
@@ -92,7 +92,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 		MesosConfiguration mesosConfig,
 		MesosWorkerStore workerStore,
 		LeaderRetrievalService leaderRetrievalService,
-		ContaineredTaskManagerParameters taskManagerParameters,
+		MesosTaskManagerParameters taskManagerParameters,
 		Protos.TaskInfo.Builder taskManagerLaunchContext,
 		int maxFailedTasks,
 		int numInitialTaskManagers) {
@@ -288,12 +288,12 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				switch(worker.state()) {
 					case New:
 						workersInNew.put(extractResourceID(worker.taskID()), worker);
-						MesosWorkerLaunchContext tc = new MesosWorkerLaunchContext(taskManagerLaunchContext, worker.taskID());
+						MesosWorkerLaunchContext tc = createLaunchableMesosWorkerNode(worker.taskID());
 						toLaunch.add(tc.toTaskSpecification());
 						break;
 					case Launched:
 						workersInLaunch.put(extractResourceID(worker.taskID()), worker);
-						MesosWorkerLaunchContext tc2 = new MesosWorkerLaunchContext(taskManagerLaunchContext, worker.taskID());
+						MesosWorkerLaunchContext tc2 = createLaunchableMesosWorkerNode(worker.taskID());
 						toAssign.add(new Tuple2<TaskRequest,String>(tc2, worker.hostname().get()));
 						break;
 					case Released:
@@ -332,7 +332,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				workerStore.putWorker(worker);
 				workersInNew.put(extractResourceID(worker.taskID()), worker);
 
-				MesosWorkerLaunchContext tc = new MesosWorkerLaunchContext(taskManagerLaunchContext, worker.taskID());
+				MesosWorkerLaunchContext tc = createLaunchableMesosWorkerNode(worker.taskID());
 
 				LOG.info("Scheduling Mesos task {} with ({} mem, {} cpu).",
 					worker.taskID().getValue(), tc.getMemory(), tc.getCPUs());
@@ -634,6 +634,12 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 	//  Utilities
 	// ------------------------------------------------------------------------
 
+	private MesosWorkerLaunchContext createLaunchableMesosWorkerNode(Protos.TaskID taskID) {
+		MesosWorkerLaunchContext tc =
+			new MesosWorkerLaunchContext(taskManagerParameters, taskManagerLaunchContext, taskID);
+		return tc;
+	}
+
 	/**
 	 * Extracts a unique ResourceID from the Mesos task.
 	 *
@@ -706,7 +712,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			MesosConfiguration mesosConfig,
 			MesosWorkerStore workerStore,
 			LeaderRetrievalService leaderRetrievalService,
-			ContaineredTaskManagerParameters taskManagerParameters,
+		 	MesosTaskManagerParameters taskManagerParameters,
 			Protos.TaskInfo.Builder taskManagerLaunchContext,
 			int numInitialTaskManagers,
 			Logger log)

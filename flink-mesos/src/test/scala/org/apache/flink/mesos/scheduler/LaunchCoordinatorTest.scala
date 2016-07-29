@@ -13,6 +13,7 @@ import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
 import org.apache.flink.runtime.akka.AkkaUtils
+import org.apache.mesos.Protos.{SlaveID, TaskInfo}
 import org.apache.mesos.{SchedulerDriver, Protos}
 import org.junit.runner.RunWith
 import org.mockito.Mockito.{verify, _}
@@ -23,6 +24,10 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
 import scala.collection.JavaConverters._
+
+import org.apache.flink.mesos.Utils.range
+import org.apache.flink.mesos.Utils.ranges
+import org.apache.flink.mesos.Utils.scalar
 
 @RunWith(classOf[JUnitRunner])
 class LaunchCoordinatorTest
@@ -72,7 +77,23 @@ class LaunchCoordinatorTest
         .setTaskId(taskID).setName(taskID.getValue).setCommand(Protos.CommandInfo.newBuilder.setValue("whoami"))
     }
 
-    val task = new TaskSpecification(generateTaskRequest, generateTaskInfo)
+    def generateTaskBuilder = {
+      val taskInfo = generateTaskInfo
+      new TaskBuilder() {
+        override def setSlaveID(slaveId: SlaveID): TaskBuilder = {
+          taskInfo.setSlaveId(slaveId)
+          this
+        }
+        override def setTaskAssignmentResult(taskAssignment: TaskAssignmentResult): TaskBuilder = this
+        override def build(): TaskInfo = taskInfo.build()
+      }
+    }
+
+    val task: TaskSpecification = new TaskSpecification() {
+      override def taskRequest: TaskRequest = generateTaskRequest
+      override def launch: TaskBuilder = generateTaskBuilder
+    }
+
     (taskID, task)
   }
 
@@ -84,10 +105,6 @@ class LaunchCoordinatorTest
 
   def randomOffer(frameworkID: Protos.FrameworkID, slave: (Protos.SlaveID, String)) = {
     val offerID = Protos.OfferID.newBuilder().setValue(UUID.randomUUID.toString)
-    val portRange = {
-      val startPort = offerID.getValue.hashCode % Short.MaxValue
-      Range(startPort, startPort + 10)
-    }
     Protos.Offer.newBuilder()
       .setFrameworkId(frameworkID)
       .setId(offerID)
@@ -96,7 +113,7 @@ class LaunchCoordinatorTest
       .addResources(scalar("cpus", 0.75))
       .addResources(scalar("mem", 4096.0))
       .addResources(scalar("disk", 1024.0))
-      .addResources(range("ports", portRange))
+      .addResources(ranges("ports", range(9000, 9001)))
       .build()
   }
 

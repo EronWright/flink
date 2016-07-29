@@ -196,15 +196,20 @@ public class MesosApplicationMasterRunner {
 					+ e.getMessage());
 			}
 
-			final ContaineredTaskManagerParameters taskManagerParameters =
+			final ContaineredTaskManagerParameters containeredParameters =
 				ContaineredTaskManagerParameters.create(config, taskManagerContainerMemory, slotsPerTaskManager);
 
-			LOG.info("TaskManagers will be created with {} task slots", taskManagerParameters.numSlots());
+			final MesosTaskManagerParameters taskManagerParameters =
+				MesosTaskManagerParameters.create(config, containeredParameters);
+
+			LOG.info("TaskManagers will be created with {} task slots",
+				taskManagerParameters.containeredParameters().numSlots());
 			LOG.info("TaskManagers will be started with container size {} MB, JVM heap size {} MB, " +
-					"JVM direct memory limit {} MB",
-				taskManagerParameters.taskManagerTotalMemoryMB(),
-				taskManagerParameters.taskManagerHeapSizeMB(),
-				taskManagerParameters.taskManagerDirectMemoryLimitMB());
+					"JVM direct memory limit {} MB, {} cpus",
+				taskManagerParameters.containeredParameters().taskManagerTotalMemoryMB(),
+				taskManagerParameters.containeredParameters().taskManagerHeapSizeMB(),
+				taskManagerParameters.containeredParameters().taskManagerDirectMemoryLimitMB(),
+				taskManagerParameters.cpus());
 
 			// JM endpoint, which should be explicitly configured by the dispatcher (based on acquired net resources)
 			final int listeningPort = config.getInteger(ConfigConstants.JOB_MANAGER_IPC_PORT_KEY,
@@ -526,7 +531,7 @@ public class MesosApplicationMasterRunner {
 		Configuration flinkConfig,
 		MesosConfiguration mesosConfig,
 		Map<String, String> env,
-		ContaineredTaskManagerParameters tmParams,
+		MesosTaskManagerParameters tmParams,
 		Configuration taskManagerConfig,
 		String workingDirectory,
 		Class<?> taskManagerMainClass,
@@ -547,9 +552,6 @@ public class MesosApplicationMasterRunner {
 
 		String classPathString = env.get(MesosConfigKeys.ENV_FLINK_CLASSPATH);
 		require(classPathString != null, "Environment variable %s not set", MesosConfigKeys.ENV_FLINK_CLASSPATH);
-
-		// TODO configure the task request
-		int cpus = taskManagerConfig.getInteger(ConfigConstants.MESOS_RESOURCEMANAGER_TASKS_CPUS, Math.max(tmParams.numSlots(), 1));
 
 		// register the Flink jar
 		final File flinkJarFile = new File(workingDirectory, "flink.jar");
@@ -577,13 +579,13 @@ public class MesosApplicationMasterRunner {
 		boolean hasLog4j = new File(workingDirectory, "log4j.properties").exists();
 
 		String launchCommand = BootstrapTools.getTaskManagerShellCommand(
-			flinkConfig, tmParams, ".", ".",
+			flinkConfig, tmParams.containeredParameters(), ".", ".",
 			hasLogback, hasLog4j, taskManagerMainClass);
 		cmd.setValue(launchCommand);
 
 		// build the environment variables
 		Protos.Environment.Builder envBuilder = Protos.Environment.newBuilder();
-		for (Map.Entry<String, String> entry : tmParams.taskManagerEnv().entrySet()) {
+		for (Map.Entry<String, String> entry : tmParams.containeredParameters().taskManagerEnv().entrySet()) {
 			envBuilder.addVariables(variable(entry.getKey(), entry.getValue()));
 		}
 		envBuilder.addVariables(variable(MesosConfigKeys.ENV_CLASSPATH, classPathString));

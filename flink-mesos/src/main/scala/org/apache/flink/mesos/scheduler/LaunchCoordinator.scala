@@ -213,7 +213,16 @@ object LaunchCoordinator {
   /**
     * Specifies the task requirements and Mesos task information.
     */
-  case class TaskSpecification(taskRequest: TaskRequest, taskInfo: TaskInfo.Builder)
+  abstract class TaskSpecification {
+    def taskRequest: TaskRequest
+    def launch: TaskBuilder
+  }
+
+  abstract class TaskBuilder {
+    def setSlaveID(slaveId: Protos.SlaveID): TaskBuilder
+    def setTaskAssignmentResult(taskAssignment: TaskAssignmentResult): TaskBuilder
+    def build(): Protos.TaskInfo
+  }
 
   // ------------------------------------------------------------------------
   //  Messages
@@ -259,13 +268,9 @@ object LaunchCoordinator {
       allTasks: Map[String, TaskSpecification]): Seq[Protos.Offer.Operation] = {
 
     def taskInfo(assignment: TaskAssignmentResult): Protos.TaskInfo = {
-      allTasks(assignment.getTaskId).taskInfo
-        .clone()
-        .setSlaveId(slaveId)
-        .addResources(scalar("cpus", assignment.getRequest.getCPUs))
-        .addResources(scalar("mem", assignment.getRequest.getMemory))
-        //.addResources(scalar("disk", assignment.getRequest.getDisk).setRole("Flink"))
-        // TODO ports
+      allTasks(assignment.getTaskId).launch
+        .setSlaveID(slaveId)
+        .setTaskAssignmentResult(assignment)
         .build()
     }
 
@@ -276,16 +281,6 @@ object LaunchCoordinator {
     ).build()
 
     Seq(launches)
-  }
-
-  def scalar(name: String, value: Double) = {
-    Protos.Resource.newBuilder().setName(name).setType(Protos.Value.Type.SCALAR).setScalar(Protos.Value.Scalar.newBuilder().setValue(value))
-  }
-
-  def range(name: String, range: Range*) = {
-    val values = range.filter(_.step == 1).map(r => Protos.Value.Range.newBuilder().setBegin(r.start).setEnd(r.end).build())
-    val ranges = Protos.Value.Ranges.newBuilder().addAllRange(values.asJava).build()
-    Protos.Resource.newBuilder().setName(name).setType(Protos.Value.Type.RANGES).setRanges(ranges)
   }
 
   /**
