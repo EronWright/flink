@@ -8,6 +8,7 @@ import akka.testkit._
 import com.netflix.fenzo.TaskRequest.{AssignedResources, NamedResourceSetRequest}
 import com.netflix.fenzo._
 import com.netflix.fenzo.functions.{Action1, Action2}
+import com.netflix.fenzo.plugins.VMLeaseObject
 import org.apache.flink.api.java.tuple.{Tuple2=>FlinkTuple2}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
@@ -81,6 +82,7 @@ class LaunchCoordinatorTest
           .setSlaveId(slaveId)
           .build()
       }
+      override def toString = taskRequest.getId
     }
 
     (taskID, task)
@@ -104,6 +106,10 @@ class LaunchCoordinatorTest
       .addResources(scalar("disk", 1024.0))
       .addResources(ranges("ports", range(9000, 9001)))
       .build()
+  }
+
+  def lease(offer: Protos.Offer) = {
+    new VMLeaseObject(offer)
   }
 
   /**
@@ -252,7 +258,7 @@ class LaunchCoordinatorTest
           fsm.stateName should be (Idle)
         }
         "transitions to GatheringOffers when the task queue is non-empty" in new Context {
-          fsm.setState(Suspended, GatherData(tasks = Seq(task1._2), newOffers = Nil))
+          fsm.setState(Suspended, GatherData(tasks = Seq(task1._2), newLeases = Nil))
           fsm ! new Connected {}
           fsm.stateName should be (GatheringOffers)
           fsm.stateData.tasks should contain only (task1._2)
@@ -260,7 +266,7 @@ class LaunchCoordinatorTest
       }
       "Launch" which {
         "stays in Suspended with updated task queue" in new Context {
-          fsm.setState(Suspended, GatherData(tasks = Seq(task1._2), newOffers = Nil))
+          fsm.setState(Suspended, GatherData(tasks = Seq(task1._2), newLeases = Nil))
           fsm ! Launch(Seq(task2._2).asJava)
           fsm.stateName should be (Suspended)
           fsm.stateData.tasks should contain only (task1._2, task2._2)
@@ -327,37 +333,38 @@ class LaunchCoordinatorTest
           fsm.stateData.tasks should contain only (task1._2)
         }
         "transitions to Suspended with offer queue emptied" in new Context {
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! new Disconnected()
           fsm.stateName should be (Suspended)
-          fsm.stateData.newOffers should be (empty)
+          fsm.stateData.newLeases should be (empty)
         }
       }
       "Launch" which {
         "stays in GatheringOffers with updated task queue" in new Context {
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! Launch(Seq(task2._2).asJava)
           fsm.stateName should be (GatheringOffers)
           fsm.stateData.tasks should contain only (task1._2, task2._2)
-          fsm.stateData.newOffers should contain only (slave1._3)
+          fsm.stateData.newLeases.map(_.getOffer) should contain only (slave1._3)
         }
       }
       "ResourceOffers" which {
         "stays in GatheringOffers with offer queue updated" in new Context {
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! new ResourceOffers(Seq(slave1._4, slave2._3).asJava)
           fsm.stateName should be (GatheringOffers)
           fsm.stateData.tasks should contain only (task1._2)
-          fsm.stateData.newOffers should contain only (slave1._3, slave1._4, slave2._3)
+          fsm.stateData.newLeases.map(_.getOffer) should contain only (slave1._3, slave1._4, slave2._3)
         }
       }
       "OfferRescinded" which {
         "stays in GatheringOffers with offer queue updated" in new Context {
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! new OfferRescinded(slave1._3.getId)
           verify(optimizer).expireLease(slave1._3.getId.getValue)
           fsm.stateName should be (GatheringOffers)
           fsm.stateData.tasks should contain only (task1._2)
+          fsm.stateData.newLeases should be (empty)
         }
       }
       "StateTimeout" which {
@@ -367,7 +374,7 @@ class LaunchCoordinatorTest
             schedulingResult(
               successes = Seq(vmAssignmentResult(lease.hostname(), Seq(lease), Set(taskAssignmentResult(lease, task)))))
           }
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! StateTimeout
           val offers = expectMsgType[AcceptOffers]
           offers.hostname() should be (slave1._2)
@@ -379,28 +386,28 @@ class LaunchCoordinatorTest
             schedulingResult(
               successes = Seq(vmAssignmentResult(lease.hostname(), Seq(lease), Set(taskAssignmentResult(lease, task)))))
           }
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! StateTimeout
           fsm.stateName should be (Idle)
           fsm.stateData.tasks should be (empty)
-          fsm.stateData.newOffers should be (empty)
+          fsm.stateData.newLeases should be (empty)
         }
         "stays in GatheringOffers when task queue is non-empty" in new Context {
           when(optimizer.scheduleOnce(MM.any(), MM.any())) thenAnswer scheduleOnce { (requests, newLeases) =>
             schedulingResult(successes = Nil)
           }
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! StateTimeout
           fsm.stateName should be (GatheringOffers)
           fsm.stateData.tasks should contain only (task1._2)
-          fsm.stateData.newOffers should be (empty)
+          fsm.stateData.newLeases should be (empty)
         }
         "declines old offers" in new Context {
           when(optimizer.scheduleOnce(MM.any(), MM.any())) thenAnswer scheduleOnce { (requests, newLeases) =>
             optimizerBuilder.leaseRejectAction.call(newLeases.head)
             schedulingResult(successes = Nil)
           }
-          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newOffers = Seq(slave1._3)))
+          fsm.setState(GatheringOffers, GatherData(tasks = Seq(task1._2), newLeases = Seq(lease(slave1._3))))
           fsm ! StateTimeout
           verify(schedulerDriver).declineOffer(slave1._3.getId)
         }
@@ -409,4 +416,6 @@ class LaunchCoordinatorTest
       behave like handlesAssignments(GatheringOffers)
     }
   }
+
+  override def toString = s"LaunchCoordinatorTest()"
 }

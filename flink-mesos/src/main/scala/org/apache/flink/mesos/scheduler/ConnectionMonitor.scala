@@ -51,6 +51,11 @@ class ConnectionMonitor() extends Actor with FSM[FsmState, Unit] {
       goto(ConnectingState)
   }
 
+  onTransition {
+    case previousState -> nextState =>
+      LOG.debug(s"State change ($previousState -> $nextState) with data ${nextStateData}")
+  }
+
   initialize()
 }
 

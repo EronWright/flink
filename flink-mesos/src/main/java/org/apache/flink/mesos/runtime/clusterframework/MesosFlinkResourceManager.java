@@ -334,7 +334,7 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 
 				LaunchableMesosWorker launchable = createLaunchableMesosWorker(worker.taskID());
 
-				LOG.info("Scheduling Mesos task {} with ({} mem, {} cpu).",
+				LOG.info("Scheduling Mesos task {} with ({} MB, {} cpus).",
 					launchable.taskID().getValue(), launchable.taskRequest().getMemory(), launchable.taskRequest().getCPUs());
 
 				toMonitor.add(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(worker)));

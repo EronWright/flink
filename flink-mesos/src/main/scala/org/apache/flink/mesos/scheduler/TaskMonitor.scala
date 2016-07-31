@@ -2,7 +2,7 @@ package org.apache.flink.mesos.scheduler
 
 import grizzled.slf4j.Logger
 
-import akka.actor.{Actor, LoggingFSM, Props}
+import akka.actor.{Actor, FSM, Props}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.ReconciliationCoordinator.Reconcile
 import org.apache.flink.mesos.scheduler.TaskMonitor._
@@ -28,7 +28,7 @@ import scala.concurrent.duration._
 class TaskMonitor(
     flinkConfig: Configuration,
     schedulerDriver: SchedulerDriver,
-    goalState: TaskGoalState) extends Actor with LoggingFSM[TaskMonitorState,StateData] {
+    goalState: TaskGoalState) extends Actor with FSM[TaskMonitorState,StateData] {
 
   val LOG = Logger(getClass)
 

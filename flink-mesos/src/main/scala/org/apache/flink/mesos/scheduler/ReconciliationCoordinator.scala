@@ -2,7 +2,8 @@ package org.apache.flink.mesos.scheduler
 
 import java.util.concurrent.ThreadLocalRandom
 
-import akka.actor.{Actor, LoggingFSM, Props}
+import akka.actor.{Actor, FSM, Props}
+import grizzled.slf4j.Logger
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.ReconciliationCoordinator._
 import org.apache.flink.mesos.scheduler.messages.{Connected, Disconnected, StatusUpdate}
@@ -20,7 +21,9 @@ import scala.concurrent.duration._
   */
 class ReconciliationCoordinator(
     flinkConfig: Configuration,
-    schedulerDriver: SchedulerDriver) extends Actor with LoggingFSM[TaskState,ReconciliationData] {
+    schedulerDriver: SchedulerDriver) extends Actor with FSM[TaskState,ReconciliationData] {
+
+  val LOG = Logger(getClass)
 
   startWith(Suspended, ReconciliationData())
 
@@ -80,6 +83,11 @@ class ReconciliationCoordinator(
 
     case Event(msg: Disconnected, data: ReconciliationData) =>
       goto(Suspended) using data.copy(retries = 0)
+  }
+
+  onTransition {
+    case previousState -> nextState =>
+      LOG.debug(s"State change ($previousState -> $nextState) with data ${nextStateData}")
   }
 
   initialize()

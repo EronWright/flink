@@ -1,9 +1,10 @@
 package org.apache.flink.mesos.scheduler
 
-import akka.actor.{Actor, ActorRef, LoggingFSM, Props}
+import akka.actor.{Actor, ActorRef, FSM, Props}
 import com.netflix.fenzo._
 import com.netflix.fenzo.functions.Action1
 import com.netflix.fenzo.plugins.VMLeaseObject
+import grizzled.slf4j.Logger
 import org.apache.flink.api.java.tuple.{Tuple2=>FlinkTuple2}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
@@ -28,7 +29,9 @@ class LaunchCoordinator(
     config: Configuration,
     schedulerDriver: SchedulerDriver,
     optimizerBuilder: TaskSchedulerBuilder
-  ) extends Actor with LoggingFSM[TaskState, GatherData] {
+  ) extends Actor with FSM[TaskState, GatherData] {
+
+  val LOG = Logger(getClass)
 
   /**
     * The task placement optimizer.
@@ -41,6 +44,7 @@ class LaunchCoordinator(
     optimizerBuilder
       .withLeaseRejectAction(new Action1[VirtualMachineLease]() {
         def call(lease: VirtualMachineLease) {
+          LOG.info(s"Declined offer ${lease.getId} from ${lease.hostname()} of ${lease.memoryMB()} MB, ${lease.cpuCores()} cpus.")
           schedulerDriver.declineOffer(lease.getOffer.getId)
         }
       }).build
@@ -54,7 +58,7 @@ class LaunchCoordinator(
   /**
     * Initial state
     */
-  startWith(Suspended, GatherData(tasks = Nil, newOffers = Nil))
+  startWith(Suspended, GatherData(tasks = Nil, newLeases = Nil))
 
   /**
     * State: Suspended
@@ -95,11 +99,14 @@ class LaunchCoordinator(
     */
   onTransition {
     case _ -> GatheringOffers =>
+      LOG.info(s"Now gathering offers for at least ${nextStateData.tasks.length} task(s).")
       schedulerDriver.reviveOffers()
 
     case GatheringOffers -> _ =>
       // decline any outstanding offers and suppress future offers
-      assert(nextStateData.newOffers.isEmpty)
+      LOG.info(s"No longer gathering offers; all requests fulfilled.")
+
+      assert(nextStateData.newLeases.isEmpty)
       schedulerDriver.suppressOffers()
       optimizer.expireAllLeases()
   }
@@ -115,17 +122,36 @@ class LaunchCoordinator(
 
     case Event(msg: Disconnected, data: GatherData) =>
       // reconciliation spec: offers are implicitly declined upon disconnect
-      goto(Suspended) using data.copy(newOffers = Nil)
+      goto(Suspended) using data.copy(newLeases = Nil)
 
     case Event(offers: ResourceOffers, data: GatherData) =>
-      stay using data.copy(newOffers = data.newOffers ++ offers.offers().asScala)
+      val leases = offers.offers().asScala.map(new VMLeaseObject(_).asInstanceOf[VirtualMachineLease])
+      if(LOG.isInfoEnabled) {
+        val (cpus, mem) = leases.foldLeft((0.0,0.0)) { (z,o) => (z._1 + o.cpuCores(), z._2 + o.memoryMB()) }
+        LOG.info(s"Received offer(s) of $mem MB, $cpus cpus:")
+        for(lease <- leases) {
+          LOG.info(s"  ${lease.getId} from ${lease.hostname()} of ${lease.memoryMB()} MB, ${lease.cpuCores()} cpus")
+        }
+      }
+      stay using data.copy(newLeases = data.newLeases ++ leases)
 
     case Event(StateTimeout, data: GatherData) =>
       val remaining = MutableMap(data.tasks.map(t => t.taskRequest.getId -> t):_*)
 
+      LOG.info(s"Processing ${remaining.size} task(s) against ${data.newLeases.length} new offer(s) plus outstanding offers.")
+
       // attempt to assign the outstanding tasks using the optimizer
       val result = optimizer.scheduleOnce(
-        data.tasks.map(_.taskRequest).asJava, data.newOffers.map(new VMLeaseObject(_).asInstanceOf[VirtualMachineLease]).asJava)
+        data.tasks.map(_.taskRequest).asJava, data.newLeases.asJava)
+
+      if(LOG.isInfoEnabled) {
+        // note that vmCurrentStates are computed before any actions taken (incl. expiration)
+        LOG.info("Resources considered: (note: expired offers not deducted from below)")
+        for(vm <- optimizer.getVmCurrentStates.asScala) {
+          val lease = vm.getCurrAvailableResources
+          LOG.info(s"  ${vm.getHostname} has ${lease.memoryMB()} MB, ${lease.cpuCores()} cpus")
+        }
+      }
       log.debug(result.toString)
 
       for((hostname, assignments) <- result.getResultMap.asScala) {
@@ -141,18 +167,28 @@ class LaunchCoordinator(
           .flatMap(_.getLaunch.getTaskInfosList.asScala.map(_.getTaskId))
         for(taskId <- launchedTasks) {
           val task = remaining.remove(taskId.getValue).get
+          LOG.debug(s"Assigned task ${task.taskRequest().getId} to host ${hostname}.")
           optimizer.getTaskAssigner.call(task.taskRequest, hostname)
         }
 
         // send the operations to Mesos via manager
         manager ! new AcceptOffers(hostname, offerIds.asJava, operations.asJava)
+
+        if(LOG.isInfoEnabled) {
+          LOG.info(s"Launched ${launchedTasks.length} task(s) on ${hostname} using ${offerIds.length} offer(s):")
+          for(offerId <- offerIds) {
+            LOG.info(s"  ${offerId.getValue}")
+          }
+        }
       }
 
       // stay in GatheringOffers state if any tasks remain, otherwise transition to idle
       if(remaining.isEmpty) {
-        goto(Idle) using data.copy(newOffers = Nil, tasks = Nil)
+        goto(Idle) using data.copy(newLeases = Nil, tasks = Nil)
       } else {
-        stay using data.copy(newOffers = Nil, tasks = remaining.values.toList) forMax SUBSEQUENT_GATHER_DURATION
+        LOG.info(s"Waiting for more offers; ${remaining.size} task(s) are not yet launched.")
+
+        stay using data.copy(newLeases = Nil, tasks = remaining.values.toList) forMax SUBSEQUENT_GATHER_DURATION
       }
   }
 
@@ -166,20 +202,28 @@ class LaunchCoordinator(
 
     case Event(offer: OfferRescinded, data: GatherData) =>
       // forget rescinded offers
+      LOG.info(s"Offer ${offer.offerId()} was rescinded.")
       optimizer.expireLease(offer.offerId().getValue)
-      stay using data.copy(newOffers = data.newOffers.filterNot(_.getId == offer.offerId()))
+      stay using data.copy(newLeases = data.newLeases.filterNot(_.getOffer.getId == offer.offerId()))
 
     case Event(msg: Assign, _) =>
       // recovering an earlier task assignment
       for(task <- msg.tasks.asScala) {
+        LOG.debug(s"Assigned task ${task.f0.getId} to host ${task.f1}.")
         optimizer.getTaskAssigner.call(task.f0, task.f1)
       }
       stay()
 
     case Event(msg: Unassign, _) =>
       // planning to terminate a task - unassign it from its host in the optimizer's state
+      LOG.debug(s"Unassigned task ${msg.taskID} from host ${msg.hostname}.")
       optimizer.getTaskUnAssigner.call(msg.taskID.getValue, msg.hostname)
       stay()
+  }
+
+  onTransition {
+    case previousState -> nextState =>
+      LOG.debug(s"State change ($previousState -> $nextState) with data $nextStateData")
   }
 
   initialize()
@@ -206,9 +250,9 @@ object LaunchCoordinator {
     * FSM state data.
     *
     * @param tasks the tasks to launch.
-    * @param newOffers new offers not yet handed to the optimizer.
+    * @param newLeases new leases not yet handed to the optimizer.
     */
-  case class GatherData(tasks: Seq[LaunchableTask] = Nil, newOffers: Seq[Protos.Offer] = Nil)
+  case class GatherData(tasks: Seq[LaunchableTask] = Nil, newLeases: Seq[VirtualMachineLease] = Nil)
 
   // ------------------------------------------------------------------------
   //  Messages

@@ -120,6 +120,14 @@ public class LaunchableMesosWorker implements LaunchableTask {
 		public AssignedResources getAssignedResources() {
 			return assignedResources.get();
 		}
+
+		@Override
+		public String toString() {
+			return "Request{" +
+				"cpus=" + getCPUs() +
+				"memory=" + getMemory() +
+				'}';
+		}
 	}
 
 	/**
@@ -167,5 +175,13 @@ public class LaunchableMesosWorker implements LaunchableTask {
 			.addVariables(variable(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES, dynamicPropertiesEncoded));
 
 		return taskInfo.build();
+	}
+
+	@Override
+	public String toString() {
+		return "LaunchableMesosWorker{" +
+			"taskID=" + taskID +
+			"taskRequest=" + taskRequest +
+			'}';
 	}
 }
