@@ -568,6 +568,38 @@ public final class ConfigConstants {
 	public static final String AKKA_TCP_TIMEOUT = "akka.tcp.timeout";
 
 	/**
+	 * Enable Akka SSL transport
+	 */
+	public static final String AKKA_SSL_ENABLE = "akka.ssl.enabled";
+
+	/** The Java keystore file to be used by the JobManager for the SSL Server */
+	public static final String AKKA_SSL_KEYSTORE = "akka.ssl.keystore";
+
+	/** secret to decrypt the keystore file */
+	public static final String AKKA_SSL_KEYSTORE_PASSWORD = "akka.ssl.keystore.password";
+
+	/** secret to decrypt the server key */
+	public static final String AKKA_SSL_KEY_PASSWORD = "akka.ssl.key.password";
+
+	/** the truststore file containing the public CA certificates to be used by clients to verify server SSL certificate */
+	public static final String AKKA_SSL_TRUSTSTORE = "akka.ssl.truststore";
+
+	/** secret to decrypt the truststore */
+	public static final String AKKA_SSL_TRUSTSTORE_PASSWORD = "akka.ssl.truststore.password";
+
+	/** SSL protocol version to be supported for akka ssl transport */
+	public static final String AKKA_SSL_PROTOCOL = "akka.ssl.protocol";
+
+	/**
+	 * The standard SSL algorithms to be supported
+	 * More options here - http://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites
+	 * */
+	public static final String AKKA_SSL_ALGORITHMS = "akka.ssl.algorithms";
+
+	/** random number generator to be used depending on the security requirements */
+	public static final String AKKA_SSL_RANDOM_NUMBER_GENERATOR = "akka.ssl.random-number-generator";
+
+	/**
 	 * Maximum framesize of akka messages
 	 */
 	public static final String AKKA_FRAMESIZE = "akka.framesize";
@@ -939,7 +971,7 @@ public final class ConfigConstants {
 	/** The config key for the port of the JobManager web frontend.
 	 * Setting this value to {@code -1} disables the web frontend. */
 	public static final int DEFAULT_JOB_MANAGER_WEB_FRONTEND_PORT = 8081;
-	
+
 	/** The default number of archived jobs for the jobmanager */
 	public static final int DEFAULT_JOB_MANAGER_WEB_ARCHIVE_COUNT = 5;
 
@@ -985,7 +1017,13 @@ public final class ConfigConstants {
 	public static String DEFAULT_AKKA_LOOKUP_TIMEOUT = "10 s";
 
 	public static String DEFAULT_AKKA_CLIENT_TIMEOUT = "60 s";
-	
+
+	public static boolean DEFAULT_AKKA_SSL_ENABLED = false;
+
+	public static String DEFAULT_AKKA_SSL_PROTOCOL = "TLSv1.2";
+
+	public static String DEFAULT_AKKA_SSL_ALGORITHMS = "TLS_RSA_WITH_AES_128_CBC_SHA";
+
 	// ----------------------------- Streaming Values --------------------------
 	
 	public static String DEFAULT_STATE_BACKEND = "jobmanager";

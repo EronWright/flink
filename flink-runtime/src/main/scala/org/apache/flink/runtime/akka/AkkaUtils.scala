@@ -24,7 +24,7 @@ import java.util.concurrent.{TimeUnit, Callable}
 
 import akka.actor._
 import akka.pattern.{ask => akkaAsk}
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.{ConfigValueFactory, ConfigParseOptions, Config, ConfigFactory}
 import org.apache.flink.configuration.{ConfigConstants, Configuration}
 import org.apache.flink.util.NetUtils
 import org.jboss.netty.logging.{Slf4JLoggerFactory, InternalLoggerFactory}
@@ -246,6 +246,45 @@ object AkkaUtils {
 
     val logLifecycleEvents = if (lifecycleEvents) "on" else "off"
 
+    val akkaEnableSSLConfig = configuration.getBoolean(
+      ConfigConstants.AKKA_SSL_ENABLE,
+      ConfigConstants.DEFAULT_AKKA_SSL_ENABLED)
+
+    val akkaEnableSSL = if (akkaEnableSSLConfig) "on" else "off"
+
+    val akkaSSLKeyStore = configuration.getString(
+      ConfigConstants.AKKA_SSL_KEYSTORE,
+      null)
+
+    val akkaSSLKeyStorePassword = configuration.getString(
+      ConfigConstants.AKKA_SSL_KEYSTORE_PASSWORD,
+      null)
+
+    val akkaSSLKeyPassword = configuration.getString(
+      ConfigConstants.AKKA_SSL_KEY_PASSWORD,
+      null)
+
+    val akkaSSLTrustStore = configuration.getString(
+      ConfigConstants.AKKA_SSL_TRUSTSTORE,
+      null)
+
+    val akkaSSLTrustStorePassword = configuration.getString(
+      ConfigConstants.AKKA_SSL_TRUSTSTORE_PASSWORD,
+      null)
+
+    val akkaSSLProtocol = configuration.getString(
+      ConfigConstants.AKKA_SSL_PROTOCOL,
+      ConfigConstants.DEFAULT_AKKA_SSL_PROTOCOL)
+
+    val akkaSSLAlgorithmsString = configuration.getString(
+      ConfigConstants.AKKA_SSL_ALGORITHMS,
+      ConfigConstants.DEFAULT_AKKA_SSL_ALGORITHMS)
+    val akkaSSLAlgorithms = akkaSSLAlgorithmsString.split(",").toList.mkString("[", ",", "]")
+
+    val akkaSSLRandomNumGenerator = configuration.getString(
+      ConfigConstants.AKKA_SSL_RANDOM_NUMBER_GENERATOR,
+      null)
+
     val configString =
       s"""
          |akka {
@@ -301,7 +340,40 @@ object AkkaUtils {
         ""
       }
 
-    ConfigFactory.parseString(configString + hostnameConfigString)
+    val sslConfigString = if (akkaEnableSSLConfig) {
+      s"""
+         |akka {
+         |  remote {
+         |
+         |    enabled-transports = ["akka.remote.netty.ssl"]
+         |
+         |    netty {
+         |
+         |      ssl = $${akka.remote.netty.tcp}
+         |
+         |      ssl {
+         |
+         |        enable-ssl = $akkaEnableSSL
+         |        security {
+         |          key-store = "$akkaSSLKeyStore"
+         |          key-store-password = "$akkaSSLKeyStorePassword"
+         |          key-password = "$akkaSSLKeyPassword"
+         |          trust-store = "$akkaSSLTrustStore"
+         |          trust-store-password = "$akkaSSLTrustStorePassword"
+         |          protocol = $akkaSSLProtocol
+         |          enabled-algorithms = $akkaSSLAlgorithms
+         |          random-number-generator = "$akkaSSLRandomNumGenerator"
+         |        }
+         |      }
+         |    }
+         |  }
+         |}
+       """.stripMargin
+    }else{
+      ""
+    }
+
+    ConfigFactory.parseString(configString + hostnameConfigString + sslConfigString).resolve()
   }
 
   def getLogLevel: String = {
@@ -558,4 +630,16 @@ object AkkaUtils {
         throw new Exception(s"Could not retrieve InetSocketAddress from Akka URL $akkaURL")
     }
   }
+
+  /** Returns the protocol field for the URL of the remote actor system given the user configuration
+    *
+    * @param config instance containing the user provided configuration values
+    * @return the remote url's protocol field
+    */
+  def getAkkaProtocol(config: Configuration): String = {
+    val sslEnabled = config.getBoolean(ConfigConstants.AKKA_SSL_ENABLE, ConfigConstants.DEFAULT_AKKA_SSL_ENABLED)
+    if (sslEnabled) "akka.ssl.tcp" else "akka.tcp"
+  }
+
 }
+
