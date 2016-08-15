@@ -28,6 +28,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.router.Handler;
 import io.netty.handler.codec.http.router.Router;
+import io.netty.handler.ssl.SslHandler;
 import org.apache.commons.io.FileUtils;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
@@ -74,9 +75,14 @@ import scala.concurrent.ExecutionContextExecutor;
 import scala.concurrent.Promise;
 import scala.concurrent.duration.FiniteDuration;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.security.KeyStore;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
@@ -112,6 +118,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 	private final JobManagerRetriever retriever;
 
 	private final Router router;
+
+	private final SSLContext serverSSLContext;
 
 	private final ServerBootstrap bootstrap;
 
@@ -315,11 +323,61 @@ public class WebRuntimeMonitor implements WebMonitor {
 			LOG.warn("Error while adding shutdown hook", t);
 		}
 
+		// Config to enable https access to the web-ui
+		boolean enableSSL = config.getBoolean(
+			ConfigConstants.JOB_MANAGER_WEB_SSL_FLAG,
+			ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_FLAG);
+
+		if (enableSSL) {
+			LOG.info("Enabling ssl for the web frontend");
+			try {
+				String keystoreFilePath = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE,
+					null);
+
+				String keystorePassword = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE_PASSWORD,
+					null);
+
+				String certPassword = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEY_PASSWORD,
+					null);
+
+				String sslVersion = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_VERSION,
+					ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_VERSION);
+
+				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+				ks.load(new FileInputStream(new File(keystoreFilePath)),
+					keystorePassword.toCharArray());
+
+				// Set up key manager factory to use the server key store
+				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+				kmf.init(ks, certPassword.toCharArray());
+
+				// Initialize the SSLContext
+				serverSSLContext = SSLContext.getInstance(sslVersion);
+				serverSSLContext.init(kmf.getKeyManagers(), null, null);
+
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSLContext for the web frontend", e);
+			}
+		} else {
+			serverSSLContext = null;
+		}
+
 		ChannelInitializer<SocketChannel> initializer = new ChannelInitializer<SocketChannel>() {
 
 			@Override
 			protected void initChannel(SocketChannel ch) {
 				Handler handler = new Handler(router);
+
+				// SSL should be the first handler in the pipeline
+				if (serverSSLContext != null) {
+					SSLEngine sslEngine = serverSSLContext.createSSLEngine();
+					sslEngine.setUseClientMode(false);
+					ch.pipeline().addLast("ssl", new SslHandler(sslEngine));
+				}
 
 				ch.pipeline()
 						.addLast(new HttpServerCodec())
