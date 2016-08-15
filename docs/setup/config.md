@@ -228,6 +228,11 @@ The following parameters configure Flink's JobManager and TaskManagers.
 - `jobmanager.web.backpressure.refresh-interval`: Time after which available stats are deprecated and need to be refreshed (DEFAULT: `60000`, 1 min).
 - `jobmanager.web.backpressure.num-samples`: Number of stack trace samples to take to determine back pressure (DEFAULT: `100`).
 - `jobmanager.web.backpressure.delay-between-samples`: Delay between stack trace samples to determine back pressure (DEFAULT: `50`, 50 ms).
+- `jobmanager.web.ssl.enabled`: Enable https access to the web frontend (DEFAULT: `false`).
+- `jobmanager.web.ssl.keystore`: The Java keystore file location containing web frontend's ssl private key and certificate.
+- `jobmanager.web.ssl.keystore.password`: The secret to decrypt the keystore file.
+- `jobmanager.web.ssl.key.password`: The secret to decrypt the server key stored in the keystore.
+- `jobmanager.web.ssl.version`: The ssl version to be supported by the web frontend for https access (DEFAULT: `TLS`).
 
 ### File Systems
 

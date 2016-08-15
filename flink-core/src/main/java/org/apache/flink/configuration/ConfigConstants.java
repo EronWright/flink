@@ -490,6 +490,23 @@ public final class ConfigConstants {
 	public static final String JOB_MANAGER_WEB_PORT_KEY = "jobmanager.web.port";
 
 	/**
+	 * Config parameter to enable SSL on the JobManager Web UI
+	 */
+	public static final String JOB_MANAGER_WEB_SSL_FLAG = "jobmanager.web.ssl.enabled";
+
+	/** The Java keystore file location which contains the certificate and key for the SSL connection */
+	public static final String JOB_MANAGER_WEB_SSL_KEYSTORE = "jobmanager.web.ssl.keystore";
+
+	/** The secret to decrypt the keystore file */
+	public static final String JOB_MANAGER_WEB_SSL_KEYSTORE_PASSWORD = "jobmanager.web.ssl.keystore.password";
+
+	/** The secret to decrypt the server key */
+	public static final String JOB_MANAGER_WEB_SSL_KEY_PASSWORD = "jobmanager.web.ssl.key.password";
+
+	/** The SSL protocol version to be supported by the SSL server */
+	public static final String JOB_MANAGER_WEB_SSL_VERSION = "jobmanager.web.ssl.version";
+
+	/**
 	 * The config parameter defining the flink web directory to be used by the webmonitor.
 	 */
 	public static final String JOB_MANAGER_WEB_TMPDIR_KEY = "jobmanager.web.tmpdir";
@@ -971,6 +988,12 @@ public final class ConfigConstants {
 	/** The config key for the port of the JobManager web frontend.
 	 * Setting this value to {@code -1} disables the web frontend. */
 	public static final int DEFAULT_JOB_MANAGER_WEB_FRONTEND_PORT = 8081;
+
+	/** Default flag to enable SSL support for the JobManager web UI */
+	public static final boolean DEFAULT_JOB_MANAGER_WEB_SSL_FLAG = false;
+
+	/** Default SSL protocol version to use for the web UI */
+	public static final String DEFAULT_JOB_MANAGER_WEB_SSL_VERSION = "TLS";
 
 	/** The default number of archived jobs for the jobmanager */
 	public static final int DEFAULT_JOB_MANAGER_WEB_ARCHIVE_COUNT = 5;
