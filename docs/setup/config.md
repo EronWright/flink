@@ -211,6 +211,15 @@ The following parameters configure Flink's JobManager and TaskManagers.
 - `akka.throughput`: Number of messages that are processed in a batch before returning the thread to the pool. Low values denote a fair scheduling whereas high values can increase the performance at the cost of unfairness (DEFAULT: **15**).
 - `akka.log.lifecycle.events`: Turns on the Akka's remote logging of events. Set this value to 'true' in case of debugging (DEFAULT: **false**).
 - `akka.startup-timeout`: Timeout after which the startup of a remote component is considered being failed (DEFAULT: **akka.ask.timeout**).
+- `akka.ssl.enabled`: Turns on SSL for Akka's remote communictation (DEFAULT: **false**).
+- `akka.ssl.keystore`: The Java keystore file to be used by the JobManager for the Akka SSL Server Certificate.
+- `akka.ssl.keystore.password`: The secret to decrypt the keystore file.
+- `akka.ssl.key.password`: The secret to decrypt the server key in the keystore.
+- `akka.ssl.truststore`: The truststore file containing the public CA certificates to be used by clients (TaskManager and FlinkClient) to verify the server's certificate.
+- `akka.ssl.truststore.password`: The secret to decrypt the truststore.
+- `akka.ssl.protocol`: The SSL protocol version to be supported for the akka ssl transport (DEFAULT: **TLSv1.2**).
+- `akka.ssl.algorithms`: The comma separated list of standard SSL algorithms to be supported. Read more [here](http://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites) (DEFAULT: **TLS_RSA_WITH_AES_128_CBC_SHA**).
+- `akka.ssl.random-number-generator`: The random number generator to be used depending on the security requirements. For available values see [here](http://doc.akka.io/docs/akka/snapshot/general/configuration.html#akka-remote).
 
 ### JobManager Web Frontend
 
