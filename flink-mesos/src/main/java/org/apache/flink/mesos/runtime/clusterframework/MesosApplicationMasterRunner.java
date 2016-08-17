@@ -177,8 +177,8 @@ public class MesosApplicationMasterRunner {
 			final String workingDir = ENV.get(MesosConfigKeys.ENV_MESOS_SANDBOX);
 			checkState(workingDir != null, "Sandbox directory variable (%s) not set", MesosConfigKeys.ENV_MESOS_SANDBOX);
 
-			final String sessionID = ENV.get(MesosConfigKeys.ENV_SESSION_ID);
-			checkState(sessionID != null, "Session ID (%s) not set", MesosConfigKeys.ENV_SESSION_ID);
+			final String sessionID = ENV.get(MesosConfigKeys.ENV_FLINK_CONTAINER_ID);
+			checkState(sessionID != null, "Container ID (%s) not set", MesosConfigKeys.ENV_FLINK_CONTAINER_ID);
 
 			// Note that we use the "appMasterHostname" given by the system, to make sure
 			// we use the hostnames consistently throughout akka.

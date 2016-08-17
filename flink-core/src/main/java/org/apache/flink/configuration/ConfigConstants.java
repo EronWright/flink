@@ -473,12 +473,22 @@ public final class ConfigConstants {
 
 	public static final String MESOS_RESOURCEMANAGER_FRAMEWORK_SECRET = "mesos.resourcemanager.framework.secret";
 
+
 	/**
 	 * The cpus to acquire from Mesos.
 	 *
 	 * By default, we use the number of requested task slots.
 	 */
 	public static final String MESOS_RESOURCEMANAGER_TASKS_CPUS = "mesos.resourcemanager.tasks.cpus";
+
+
+	public static final String MESOS_DISPATCHER_FRAMEWORK_NAME = "mesos.dispatcher.framework.name";
+
+	public static final String MESOS_DISPATCHER_FRAMEWORK_ROLE = "mesos.dispatcher.framework.role";
+
+	public static final String MESOS_DISPATCHER_FRAMEWORK_PRINCIPAL = "mesos.dispatcher.framework.principal";
+
+	public static final String MESOS_DISPATCHER_FRAMEWORK_SECRET = "mesos.dispatcher.framework.secret";
 
 	// ------------------------ Hadoop Configuration ------------------------
 
@@ -1063,6 +1073,11 @@ public final class ConfigConstants {
 	public static final String DEFAULT_MESOS_RESOURCEMANAGER_FRAMEWORK_NAME = "Flink";
 
 	public static final String DEFAULT_MESOS_RESOURCEMANAGER_FRAMEWORK_ROLE = "*";
+
+	public static final String DEFAULT_MESOS_DISPATCHER_FRAMEWORK_NAME = "Flink Dispatcher";
+
+	public static final String DEFAULT_MESOS_DISPATCHER_FRAMEWORK_ROLE = "*";
+
 
 	// ------------------------ File System Behavior ------------------------
 
