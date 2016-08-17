@@ -42,7 +42,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.BindException;
 import java.net.ServerSocket;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 /**
  * Tools for starting JobManager and TaskManager processes, including the
@@ -338,6 +340,69 @@ public class BootstrapTools {
 		return tmCommand.toString();
 	}
 
+	/**
+	 * Generates the shell command to start a job master.
+	 * @param flinkConfig The Flink configuration.
+	 * @param jmParams Parameters for the job master.
+	 * @param configDirectory The configuration directory for the flink-conf.yaml
+	 * @param logDirectory The log directory.
+	 * @param hasLogback Uses logback?
+	 * @param hasLog4j Uses log4j?
+	 * @param mainClass The main class to start with.
+	 * @return A String containing the task manager startup command.
+	 */
+	public static String getJobMasterShellCommand(
+		Configuration flinkConfig,
+		ContaineredJobMasterParameters jmParams,
+		String configDirectory,
+		String logDirectory,
+		boolean hasLogback,
+		boolean hasLog4j,
+		Class<?> mainClass) {
+
+		StringBuilder jmCommand = new StringBuilder("$JAVA_HOME/bin/java");
+//		jmCommand.append(" -Xmx").append(jmParams.jobMasterHeapSizeMB()).append("m");
+
+		String  javaOpts = flinkConfig.getString(ConfigConstants.FLINK_JVM_OPTIONS, "");
+		jmCommand.append(' ').append(javaOpts);
+
+		if (hasLogback || hasLog4j) {
+			jmCommand.append(" -Dlog.file=").append(logDirectory).append("/jobmaster.log");
+			if (hasLogback) {
+				jmCommand.append(" -Dlogback.configurationFile=file:")
+					.append(configDirectory).append("/logback.xml");
+			}
+			if (hasLog4j) {
+				jmCommand.append(" -Dlog4j.configuration=file:")
+					.append(configDirectory).append("/log4j.properties");
+			}
+		}
+
+		jmCommand.append(' ').append(mainClass.getName());
+		jmCommand.append(" --configDir ").append(configDirectory);
+		jmCommand.append(" 1> ").append(logDirectory).append("/jobmaster.out");
+		jmCommand.append(" 2> ").append(logDirectory).append("/jobmaster.err");
+
+		return jmCommand.toString();
+	}
+
+	/**
+	 * Method to extract environment variables from the flinkConfiguration based on the given prefix String.
+	 *
+	 * @param envPrefix Prefix for the environment variables key
+	 * @param flinkConfiguration The Flink config to get the environment variable defintion from
+	 */
+	public static Map<String, String> getEnvironmentVariables(String envPrefix, Configuration flinkConfiguration) {
+		Map<String, String> result  = new HashMap<>();
+		for(Map.Entry<String, String> entry: flinkConfiguration.toMap().entrySet()) {
+			if(entry.getKey().startsWith(envPrefix) && entry.getKey().length() > envPrefix.length()) {
+				// remove prefix
+				String key = entry.getKey().substring(envPrefix.length());
+				result.put(key, entry.getValue());
+			}
+		}
+		return result;
+	}
 
 	// ------------------------------------------------------------------------
 
