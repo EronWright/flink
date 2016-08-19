@@ -83,7 +83,7 @@ The default fraction for managed memory can be adjusted using the `taskmanager.m
 
 - `taskmanager.memory.segment-size`: The size of memory buffers used by the memory manager and the network stack in bytes (DEFAULT: 32768 (= 32 KiBytes)).
 
-- `taskmanager.memory.preallocate`: Can be either of `true` or `false`. Specifies whether task managers should allocate all managed memory when starting up. (DEFAULT: false)
+- `taskmanager.memory.preallocate`: Can be either of `true` or `false`. Specifies whether task managers should allocate all managed memory when starting up. (DEFAULT: false). When `taskmanager.memory.off-heap` is set to `true`, then it is advised that this configuration is also set to `true`.  If this configuration is set to `false` cleaning up of the allocated offheap memory happens only when the configured JVM parameter MaxDirectMemorySize is reached by triggering a full GC.
 
 ### Memory and Performance Debugging
 
@@ -117,7 +117,10 @@ If you are on YARN, then it is sufficient to authenticate the client with Kerber
 - `jobmanager.web.port`: Port of the JobManager's web interface (DEFAULT: 8081).
 
 - `jobmanager.web.tmpdir`: This configuration parameter allows defining the Flink web directory to be used by the web interface. The web interface
-will copy its static files into the directory. Also uploaded job jars are stored in the directory. By default, the temporary directory is used.
+will copy its static files into the directory. Also uploaded job jars are stored in the directory if not overridden. By default, the temporary directory is used.
+
+- `jobmanager.web.upload.dir`: The config parameter defining the directory for uploading the job jars. If not specified a dynamic directory
+will be used under the directory specified by jobmanager.web.tmpdir.
 
 - `fs.overwrite-files`: Specifies whether file output writers should overwrite existing files by default. Set to *true* to overwrite by default, *false* otherwise. (DEFAULT: false)
 
@@ -208,15 +211,15 @@ The following parameters configure Flink's JobManager and TaskManagers.
 - `akka.throughput`: Number of messages that are processed in a batch before returning the thread to the pool. Low values denote a fair scheduling whereas high values can increase the performance at the cost of unfairness (DEFAULT: **15**).
 - `akka.log.lifecycle.events`: Turns on the Akka's remote logging of events. Set this value to 'true' in case of debugging (DEFAULT: **false**).
 - `akka.startup-timeout`: Timeout after which the startup of a remote component is considered being failed (DEFAULT: **akka.ask.timeout**).
-- `akka.ssl.enabled`: Turns on SSL for Akka's remote communictation (DEFAULT: **false**).
-- `akka.ssl.keystore`: The Java keystore file to be used by the JobManager for the Akka SSL Server Certificate.
+- `akka.ssl.enabled`: Turns on SSL for Akka's remote communication (DEFAULT: **false**).
+- `akka.ssl.keystore`: The Java keystore file to be used by the Akka endpoint for its SSL Certificate.
 - `akka.ssl.keystore.password`: The secret to decrypt the keystore file.
 - `akka.ssl.key.password`: The secret to decrypt the server key in the keystore.
-- `akka.ssl.truststore`: The truststore file containing the public CA certificates to be used by clients (TaskManager and FlinkClient) to verify the server's certificate.
+- `akka.ssl.truststore`: The truststore file containing the public CA certificates to be used by akka endpoints to verify the peer's certificate.
 - `akka.ssl.truststore.password`: The secret to decrypt the truststore.
 - `akka.ssl.protocol`: The SSL protocol version to be supported for the akka ssl transport (DEFAULT: **TLSv1.2**).
 - `akka.ssl.algorithms`: The comma separated list of standard SSL algorithms to be supported. Read more [here](http://docs.oracle.com/javase/8/docs/technotes/guides/security/StandardNames.html#ciphersuites) (DEFAULT: **TLS_RSA_WITH_AES_128_CBC_SHA**).
-- `akka.ssl.random-number-generator`: The random number generator to be used depending on the security requirements. For available values see [here](http://doc.akka.io/docs/akka/snapshot/general/configuration.html#akka-remote).
+- `akka.ssl.random-number-generator`: The random number generator to be used depending on the security requirements. For available values see [here](http://doc.akka.io/docs/akka/snapshot/general/configuration.html#akka-remote) (DEFAULT: **SecureRandom**).
 
 ### JobManager Web Frontend
 
@@ -323,6 +326,20 @@ of the JobManager, because the same ActorSystem is used. Its not possible to use
 ## Environment
 
 - `env.log.dir`: (Defaults to the `log` directory under Flink's home) Defines the directory where the Flink logs are saved. It has to be an absolute path.
+
+## Queryable State
+
+### Server
+
+- `query.server.port`: Port to bind queryable state server to (Default: `0`, binds to random port).
+- `query.server.network-threads`: Number of network (Netty's event loop) Threads for queryable state server (Default: `0`, picks number of slots).
+- `query.server.query-threads`: Number of query Threads for queryable state server (Default: `0`, picks number of slots).
+
+### Client
+
+- `query.client.network-threads`: Number of network (Netty's event loop) Threads for queryable state client (Default: `0`, picks number of available cores as returned by `Runtime.getRuntime().availableProcessors()`).
+- `query.client.lookup.num-retries`: Number of retries on KvState lookup failure due to unavailable JobManager (Default: `3`).
+- `query.client.lookup.retry-delay`: Retry delay in milliseconds on KvState lookup failure due to unavailable JobManager (Default: `1000`).
 
 ## Metrics
 

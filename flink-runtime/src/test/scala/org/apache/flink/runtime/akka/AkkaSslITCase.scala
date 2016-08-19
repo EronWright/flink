@@ -51,6 +51,8 @@ class AkkaSslITCase(_system: ActorSystem)
     "start with akka ssl enabled" in {
 
       val config = new Configuration()
+      config.setString(ConfigConstants.JOB_MANAGER_IPC_ADDRESS_KEY, "127.0.0.1")
+      config.setString(ConfigConstants.TASK_MANAGER_HOSTNAME_KEY, "127.0.0.1")
       config.setInteger(ConfigConstants.TASK_MANAGER_NUM_TASK_SLOTS, 1)
       config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
 

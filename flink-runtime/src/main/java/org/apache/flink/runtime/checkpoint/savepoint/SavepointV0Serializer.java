@@ -39,11 +39,11 @@ import java.util.List;
  * that no default Java serialization is used for serialization. Therefore, we
  * don't rely on any involved Java classes to stay the same.
  */
-class SavepointV1Serializer implements SavepointSerializer<SavepointV0> {
+class SavepointV0Serializer implements SavepointSerializer<SavepointV0> {
 
-	public static final SavepointV1Serializer INSTANCE = new SavepointV1Serializer();
+	public static final SavepointV0Serializer INSTANCE = new SavepointV0Serializer();
 
-	private SavepointV1Serializer() {
+	private SavepointV0Serializer() {
 	}
 
 	@Override
@@ -138,7 +138,7 @@ class SavepointV1Serializer implements SavepointSerializer<SavepointV0> {
 					serializedValue = new SerializedValue<>(null);
 				} else {
 					byte[] serializedData = new byte[length];
-					dis.read(serializedData, 0, length);
+					dis.readFully(serializedData, 0, length);
 					serializedValue = SerializedValue.fromBytes(serializedData);
 				}
 
@@ -165,7 +165,7 @@ class SavepointV1Serializer implements SavepointSerializer<SavepointV0> {
 					serializedValue = new SerializedValue<>(null);
 				} else {
 					byte[] serializedData = new byte[length];
-					dis.read(serializedData, 0, length);
+					dis.readFully(serializedData, 0, length);
 					serializedValue = SerializedValue.fromBytes(serializedData);
 				}
 

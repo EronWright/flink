@@ -668,7 +668,7 @@ Table result = left.minusAll(right);
     <tr>
       <td><strong>Distinct</strong></td>
       <td>
-        <p>Similar to a SQL DISTINCT clause. Returns rows with distinct value combinations.</p>
+        <p>Similar to a SQL DISTINCT clause. Returns records with distinct value combinations.</p>
 {% highlight java %}
 Table in = tableEnv.fromDataSet(ds, "a, b, c");
 Table result = in.distinct();
@@ -679,10 +679,26 @@ Table result = in.distinct();
     <tr>
       <td><strong>Order By</strong></td>
       <td>
-        <p>Similar to a SQL ORDER BY clause. Returns rows globally sorted across all parallel partitions.</p>
+        <p>Similar to a SQL ORDER BY clause. Returns records globally sorted across all parallel partitions.</p>
 {% highlight java %}
 Table in = tableEnv.fromDataSet(ds, "a, b, c");
 Table result = in.orderBy("a.asc");
+{% endhighlight %}
+      </td>
+    </tr>
+
+    <tr>
+      <td><strong>Limit</strong></td>
+      <td>
+        <p>Similar to a SQL LIMIT clause. Limits a sorted result to a specified number of records from an offset position. Limit is technically part of the Order By operator and thus must be preceded by it.</p>
+{% highlight java %}
+Table in = tableEnv.fromDataSet(ds, "a, b, c");
+Table result = in.orderBy("a.asc").limit(3); // returns unlimited number of records beginning with the 4th record 
+{% endhighlight %}
+or
+{% highlight java %}
+Table in = tableEnv.fromDataSet(ds, "a, b, c");
+Table result = in.orderBy("a.asc").limit(3, 5); // returns 5 records beginning with the 4th record 
 {% endhighlight %}
       </td>
     </tr>
@@ -874,7 +890,7 @@ val result = left.minusAll(right);
     <tr>
       <td><strong>Distinct</strong></td>
       <td>
-        <p>Similar to a SQL DISTINCT clause. Returns rows with distinct value combinations.</p>
+        <p>Similar to a SQL DISTINCT clause. Returns records with distinct value combinations.</p>
 {% highlight scala %}
 val in = ds.toTable(tableEnv, 'a, 'b, 'c);
 val result = in.distinct();
@@ -885,10 +901,26 @@ val result = in.distinct();
     <tr>
       <td><strong>Order By</strong></td>
       <td>
-        <p>Similar to a SQL ORDER BY clause. Returns rows globally sorted across all parallel partitions.</p>
+        <p>Similar to a SQL ORDER BY clause. Returns records globally sorted across all parallel partitions.</p>
 {% highlight scala %}
 val in = ds.toTable(tableEnv, 'a, 'b, 'c);
 val result = in.orderBy('a.asc);
+{% endhighlight %}
+      </td>
+    </tr>
+
+    <tr>
+      <td><strong>Limit</strong></td>
+      <td>
+        <p>Similar to a SQL LIMIT clause. Limits a sorted result to a specified number of records from an offset position. Limit is technically part of the Order By operator and thus must be preceded by it.</p>
+{% highlight scala %}
+val in = ds.toTable(tableEnv, 'a, 'b, 'c);
+val result = in.orderBy('a.asc).limit(3); // returns unlimited number of records beginning with the 4th record 
+{% endhighlight %}
+or
+{% highlight scala %}
+val in = ds.toTable(tableEnv, 'a, 'b, 'c);
+val result = in.orderBy('a.asc).limit(3, 5); // returns 5 records beginning with the 4th record 
 {% endhighlight %}
       </td>
     </tr>
@@ -925,11 +957,13 @@ unary = [ "!" | "-" ] , composite ;
 
 composite = suffixed | atom ;
 
-suffixed = cast | as | aggregation | nullCheck | if | functionCall ;
+suffixed = interval | cast | as | aggregation | nullCheck | if | functionCall ;
+
+interval = composite , "." , ("year" | "month" | "day" | "hour" | "minute" | "second" | "milli") ;
 
 cast = composite , ".cast(" , dataType , ")" ;
 
-dataType = "BYTE" | "SHORT" | "INT" | "LONG" | "FLOAT" | "DOUBLE" | "BOOLEAN" | "STRING" | "DECIMAL" | "DATE" | "TIME" | "TIMESTAMP";
+dataType = "BYTE" | "SHORT" | "INT" | "LONG" | "FLOAT" | "DOUBLE" | "BOOLEAN" | "STRING" | "DECIMAL" | "DATE" | "TIME" | "TIMESTAMP" | "INTERVAL_MONTHS" | "INTERVAL_MILLIS" ;
 
 as = composite , ".as(" , fieldReference , ")" ;
 
@@ -953,6 +987,8 @@ column names and function names follow Java identifier syntax. Expressions speci
 If working with exact numeric values or large decimals is required, the Table API also supports Java's BigDecimal type. In the Scala Table API decimals can be defined by `BigDecimal("123456")` and in Java by appending a "p" for precise e.g. `123456p`.
 
 In order to work with temporal values the Table API supports Java SQL's Date, Time, and Timestamp types. In the Scala Table API literals can be defined by using `java.sql.Date.valueOf("2016-06-27")`, `java.sql.Time.valueOf("10:10:42")`, or `java.sql.Timestamp.valueOf("2016-06-27 10:10:42.123")`. The Java and Scala Table API also support calling `"2016-06-27".toDate()`, `"10:10:42".toTime()`, and `"2016-06-27 10:10:42.123".toTimestamp()` for converting Strings into temporal types. *Note:* Since Java's temporal SQL types are time zone dependent, please make sure that the Flink Client and all TaskManagers use the same time zone.
+
+Temporal intervals can be represented as number of months (`Types.INTERVAL_MONTHS`) or number of milliseconds (`Types.INTERVAL_MILLIS`). Intervals of same type can be added or subtracted (e.g. `2.hour + 10.minutes`). Intervals of milliseconds can be added to time points (e.g. `"2016-08-10".toDate + 5.day`).
 
 {% top %}
 
@@ -1005,11 +1041,10 @@ The current version supports selection (filter), projection, inner equi-joins, g
 
 Among others, the following SQL features are not supported, yet:
 
-- Time interval data type (`INTERVAL`)
-- Timestamps are limited to milliseconds precision
+- Timestamps and intervals are limited to milliseconds precision
+- Interval arithmetic is currenly limited
 - Distinct aggregates (e.g., `COUNT(DISTINCT name)`)
 - Non-equi joins and Cartesian products
-- Result selection by order position (`ORDER BY OFFSET FETCH`)
 - Grouping sets
 
 *Note: Tables are joined in the order in which they are specified in the `FROM` clause. In some cases the table order must be manually tweaked to resolve Cartesian products.*
@@ -1072,6 +1107,9 @@ query:
       | query INTERSECT query
     }
     [ ORDER BY orderItem [, orderItem ]* ]
+    [ LIMIT { count | ALL } ]
+    [ OFFSET start { ROW | ROWS } ]
+    [ FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } ONLY]
 
 orderItem:
   expression [ ASC | DESC ]
@@ -1137,20 +1175,22 @@ Data Types
 
 The Table API is built on top of Flink's DataSet and DataStream API. Internally, it also uses Flink's `TypeInformation` to distinguish between types. The Table API does not support all Flink types so far. All supported simple types are listed in `org.apache.flink.api.table.Types`. The following table summarizes the relation between Table API types, SQL types, and the resulting Java class.
 
-| Table API              | SQL             | Java type              |
-| :--------------------- | :-------------- | :--------------------- |
-| `Types.STRING`         | `VARCHAR`       | `java.lang.String`     |
-| `Types.BOOLEAN`        | `BOOLEAN`       | `java.lang.Boolean`    |
-| `Types.BYTE`           | `TINYINT`       | `java.lang.Byte`       |
-| `Types.SHORT`          | `SMALLINT`      | `java.lang.Short`      |
-| `Types.INT`            | `INTEGER, INT`  | `java.lang.Integer`    |
-| `Types.LONG`           | `BIGINT`        | `java.lang.Long`       |
-| `Types.FLOAT`          | `REAL, FLOAT`   | `java.lang.Float`      |
-| `Types.DOUBLE`         | `DOUBLE`        | `java.lang.Double`     |
-| `Types.DECIMAL`        | `DECIMAL`       | `java.math.BigDecimal` |
-| `Types.DATE`           | `DATE`          | `java.sql.Date`        |
-| `Types.TIME`           | `TIME`          | `java.sql.Time`        |
-| `Types.TIMESTAMP`      | `TIMESTAMP`     | `java.sql.Timestamp`   |
+| Table API              | SQL                         | Java type              |
+| :--------------------- | :-------------------------- | :--------------------- |
+| `Types.STRING`         | `VARCHAR`                   | `java.lang.String`     |
+| `Types.BOOLEAN`        | `BOOLEAN`                   | `java.lang.Boolean`    |
+| `Types.BYTE`           | `TINYINT`                   | `java.lang.Byte`       |
+| `Types.SHORT`          | `SMALLINT`                  | `java.lang.Short`      |
+| `Types.INT`            | `INTEGER, INT`              | `java.lang.Integer`    |
+| `Types.LONG`           | `BIGINT`                    | `java.lang.Long`       |
+| `Types.FLOAT`          | `REAL, FLOAT`               | `java.lang.Float`      |
+| `Types.DOUBLE`         | `DOUBLE`                    | `java.lang.Double`     |
+| `Types.DECIMAL`        | `DECIMAL`                   | `java.math.BigDecimal` |
+| `Types.DATE`           | `DATE`                      | `java.sql.Date`        |
+| `Types.TIME`           | `TIME`                      | `java.sql.Time`        |
+| `Types.TIMESTAMP`      | `TIMESTAMP(3)`              | `java.sql.Timestamp`   |
+| `Types.INTERVAL_MONTHS`| `INTERVAL YEAR TO MONTH`    | `java.lang.Integer`    |
+| `Types.INTERVAL_MILLIS`| `INTERVAL DAY TO SECOND(3)` | `java.lang.Long`       |
 
 Advanced types such as generic types, composite types (e.g. POJOs or Tuples), and arrays can be fields of a row but can not be accessed yet. They are treated like a black box within Table API and SQL.
 
@@ -1856,6 +1896,95 @@ TIMESTAMP VARCHAR
 </table>
 </div>
 </div>
+
+### User-defined Scalar Functions
+
+If a required scalar function is not contained in the built-in functions, it is possible to define custom, user-defined scalar functions for both the Table API and SQL. A user-defined scalar functions maps zero, one, or multiple scalar values to a new scalar value. 
+
+In order to define a scalar function one has to extend the base class `ScalarFunction` in `org.apache.flink.api.table.functions` and implement (one or more) evaluation methods. The behavior of a scalar function is determined by the evaluation method. An evaluation method must be declared publicly and named `eval`. The parameter types and return type of the evaluation method also determine the parameter and return types of the scalar function. Evaluation methods can also be overloaded by implementing multiple methods named `eval`.
+
+The following example snippet shows how to define your own hash code function:
+
+<div class="codetabs" markdown="1">
+<div data-lang="java" markdown="1">
+{% highlight java %}
+public static class HashCode extends ScalarFunction {
+  public int eval(String s) {
+    return s.hashCode() * 12;
+  }
+}
+
+BatchTableEnvironment tableEnv = TableEnvironment.getTableEnvironment(env);
+
+// register the function
+tableEnv.registerFunction("hashCode", new HashCode())
+
+// use the function in Java Table API
+myTable.select("string, string.hashCode(), hashCode(string)");
+
+// use the function in SQL API
+tableEnv.sql("SELECT string, HASHCODE(string) FROM MyTable");
+{% endhighlight %}
+</div>
+
+<div data-lang="scala" markdown="1">
+{% highlight scala %}
+// must be defined in static/object context
+object hashCode extends ScalarFunction {
+  def eval(s: String): Int = {
+    s.hashCode() * 12
+  }
+}
+
+val tableEnv = TableEnvironment.getTableEnvironment(env)
+
+// use the function in Scala Table API
+myTable.select('string, hashCode('string))
+
+// register and use the function in SQL
+tableEnv.registerFunction("hashCode", hashCode)
+tableEnv.sql("SELECT string, HASHCODE(string) FROM MyTable");
+{% endhighlight %}
+</div>
+</div>
+
+By default the result type of an evaluation method is determined by Flink's type extraction facilities. This is sufficient for basic types or simple POJOs but might be wrong for more complex, custom, or composite types. In these cases `TypeInformation` of the result type can be manually defined by overriding `ScalarFunction#getResultType()`.
+
+Internally, the Table API and SQL code generation works with primitive values as much as possible. If a user-defined scalar function should not introduce much overhead through object creation/casting during runtime, it is recommended to declare parameters and result types as primitive types instead of their boxed classes. `Types.DATE` and `Types.TIME` can also be represented as `int`. `Types.TIMESTAMP` can be represented as `long`.
+
+The following example shows an advanced example which takes the internal timestamp representation and also returns the internal timestamp representation as a long value. By overriding `ScalarFunction#getResultType()` we define that the returned long value should be interpreted as a `Types.TIMESTAMP` by the code generation.
+
+<div class="codetabs" markdown="1">
+<div data-lang="java" markdown="1">
+{% highlight java %}
+public static class TimestampModifier extends ScalarFunction {
+  public long eval(long t) {
+    return t % 1000;
+  }
+
+  public TypeInformation<?> getResultType(signature: Class<?>[]) {
+    return Types.TIMESTAMP;
+  }
+}
+{% endhighlight %}
+</div>
+
+<div data-lang="scala" markdown="1">
+{% highlight scala %}
+object TimestampModifier extends ScalarFunction {
+  def eval(t: Long): Long = {
+    t % 1000
+  }
+
+  override def getResultType(signature: Array[Class[_]]): TypeInformation[_] = {
+    Types.TIMESTAMP
+  }
+}
+{% endhighlight %}
+</div>
+</div>
+
+
 
 {% top %}
 

@@ -19,6 +19,7 @@
 package org.apache.flink.runtime.executiongraph;
 
 import akka.actor.ActorSystem;
+
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.accumulators.Accumulator;
@@ -53,18 +54,20 @@ import org.apache.flink.runtime.jobmanager.RecoveryMode;
 import org.apache.flink.runtime.jobmanager.scheduler.CoLocationGroup;
 import org.apache.flink.runtime.jobmanager.scheduler.Scheduler;
 import org.apache.flink.runtime.messages.ExecutionGraphMessages;
+import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.util.SerializableObject;
 import org.apache.flink.runtime.util.SerializedThrowable;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.SerializedValue;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import scala.concurrent.ExecutionContext;
 import scala.concurrent.duration.FiniteDuration;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -104,15 +107,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  *         about deployment of tasks and updates in the task status always use the ExecutionAttemptID to
  *         address the message receiver.</li>
  * </ul>
- * 
- * <p>The ExecutionGraph implements {@link java.io.Serializable}, because it can be archived by
- * sending it to an archive actor via an actor message. The execution graph does contain some
- * non-serializable fields. These fields are not required in the archived form and are cleared
- * in the {@link #prepareForArchiving()} method.</p>
  */
-public class ExecutionGraph implements Serializable {
-
-	private static final long serialVersionUID = 42L;
+public class ExecutionGraph {
 
 	private static final AtomicReferenceFieldUpdater<ExecutionGraph, JobStatus> STATE_UPDATER =
 			AtomicReferenceFieldUpdater.newUpdater(ExecutionGraph.class, JobStatus.class, "state");
@@ -179,7 +175,7 @@ public class ExecutionGraph implements Serializable {
 	// ------ Configuration of the Execution -------
 
 	/** The execution configuration (see {@link ExecutionConfig}) related to this specific job. */
-	private SerializedValue<ExecutionConfig> serializedExecutionConfig;
+	private final SerializedValue<ExecutionConfig> serializedExecutionConfig;
 
 	/** Flag to indicate whether the scheduler may queue tasks for execution, or needs to be able
 	 * to deploy them immediately. */
@@ -188,7 +184,7 @@ public class ExecutionGraph implements Serializable {
 	/** The mode of scheduling. Decides how to select the initial set of tasks to be deployed.
 	 * May indicate to deploy all sources, or to deploy everything, or to deploy via backtracking
 	 * from results than need to be materialized. */
-	private ScheduleMode scheduleMode = ScheduleMode.FROM_SOURCES;
+	private ScheduleMode scheduleMode = ScheduleMode.LAZY_FROM_SOURCES;
 
 	/** Flag to indicate whether the Graph has been archived */
 	private boolean isArchived = false;
@@ -208,31 +204,29 @@ public class ExecutionGraph implements Serializable {
 	// ------ Fields that are relevant to the execution and need to be cleared before archiving  -------
 
 	/** The scheduler to use for scheduling new tasks as they are needed */
-	@SuppressWarnings("NonSerializableFieldInSerializableClass")
 	private Scheduler scheduler;
 
 	/** Strategy to use for restarts */
-	@SuppressWarnings("NonSerializableFieldInSerializableClass")
 	private RestartStrategy restartStrategy;
 
 	/** The classloader for the user code. Needed for calls into user code classes */
-	@SuppressWarnings("NonSerializableFieldInSerializableClass")
 	private ClassLoader userClassLoader;
 
 	/** The coordinator for checkpoints, if snapshot checkpoints are enabled */
-	@SuppressWarnings("NonSerializableFieldInSerializableClass")
 	private CheckpointCoordinator checkpointCoordinator;
 
 	/** The coordinator for savepoints, if snapshot checkpoints are enabled */
 	private transient SavepointCoordinator savepointCoordinator;
 
-	/** Checkpoint stats tracker seperate from the coordinator in order to be
+	/** Checkpoint stats tracker separate from the coordinator in order to be
 	 * available after archiving. */
 	private CheckpointStatsTracker checkpointStatsTracker;
 
 	/** The execution context which is used to execute futures. */
-	@SuppressWarnings("NonSerializableFieldInSerializableClass")
 	private ExecutionContext executionContext;
+
+	/** Registered KvState instances reported by the TaskManagers. */
+	private transient KvStateLocationRegistry kvStateLocationRegistry;
 
 	// ------ Fields that are only relevant for archived execution graphs ------------
 	private String jsonPlan;
@@ -314,6 +308,8 @@ public class ExecutionGraph implements Serializable {
 		this.restartStrategy = restartStrategy;
 
 		metricGroup.gauge(RESTARTING_TIME_METRIC_NAME, new RestartTimeGauge());
+
+		this.kvStateLocationRegistry = new KvStateLocationRegistry(jobId, getAllVertices());
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -453,6 +449,10 @@ public class ExecutionGraph implements Serializable {
 
 	public SavepointCoordinator getSavepointCoordinator() {
 		return savepointCoordinator;
+	}
+
+	public KvStateLocationRegistry getKvStateLocationRegistry() {
+		return kvStateLocationRegistry;
 	}
 
 	public RestartStrategy getRestartStrategy() {
@@ -727,7 +727,7 @@ public class ExecutionGraph implements Serializable {
 
 			switch (scheduleMode) {
 
-				case FROM_SOURCES:
+				case LAZY_FROM_SOURCES:
 					// simply take the vertices without inputs.
 					for (ExecutionJobVertex ejv : this.tasks.values()) {
 						if (ejv.getJobVertex().isInputVertex()) {
@@ -736,15 +736,12 @@ public class ExecutionGraph implements Serializable {
 					}
 					break;
 
-				case ALL:
+				case EAGER:
 					for (ExecutionJobVertex ejv : getVerticesTopologically()) {
 						ejv.scheduleAll(scheduler, allowQueuedScheduling);
 					}
 					break;
 
-				case BACKTRACKING:
-					// go back from vertices that need computation to the ones we need to run
-					throw new JobException("BACKTRACKING is currently not supported as schedule mode.");
 				default:
 					throw new JobException("Schedule mode is invalid.");
 			}
