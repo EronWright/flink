@@ -2744,9 +2744,13 @@ object JobManager {
       address: InetSocketAddress,
       name: Option[String] = None)
     : String = {
+
+    require(protocol == "akka.tcp" || protocol == "akka.ssl.tcp",
+        "protocol field should be either akka.tcp or akka.ssl.tcp")
+
     val hostPort = NetUtils.socketAddressToUrlString(address)
 
-    getJobManagerAkkaURLHelper(protocol + s"://flink@$hostPort", name)
+    getJobManagerAkkaURLHelper(s"$protocol://flink@$hostPort", name)
   }
 
   /**
