@@ -289,7 +289,7 @@ public class WebRuntimeMonitor implements WebMonitor {
 				.GET("/jars/:jarid/plan", handler(new JarPlanHandler(uploadDir)))
 
 				// run a jar
-				.POST("/jars/:jarid/run", handler(new JarRunHandler(uploadDir, timeout)))
+				.POST("/jars/:jarid/run", handler(new JarRunHandler(uploadDir, timeout, config)))
 
 				// upload a jar
 				.POST("/jars/upload", handler(new JarUploadHandler(uploadDir)))

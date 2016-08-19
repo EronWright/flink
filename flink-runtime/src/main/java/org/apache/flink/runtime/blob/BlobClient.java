@@ -18,7 +18,10 @@
 
 package org.apache.flink.runtime.blob;
 
+import org.apache.commons.logging.Log;
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.configuration.ConfigConstants;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
@@ -32,14 +35,19 @@ import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.FiniteDuration;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
 import java.io.Closeable;
 import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -68,22 +76,59 @@ public final class BlobClient implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(BlobClient.class);
 
 	/** The socket connection to the BLOB server. */
-	private final Socket socket;
+	private Socket socket;
 
 	/**
 	 * Instantiates a new BLOB client.
 	 * 
 	 * @param serverAddress
 	 *        the network address of the BLOB server
+	 * @param clientConfig
+	 *        additional configuration like SSL parameters required to connect to the blob server
 	 * @throws IOException
 	 *         thrown if the connection to the BLOB server could not be established
 	 */
-	public BlobClient(InetSocketAddress serverAddress) throws IOException {
-		this.socket = new Socket();
+	public BlobClient(InetSocketAddress serverAddress, Configuration clientConfig) throws IOException {
+
 		try {
-			this.socket.connect(serverAddress);
+			// Check if ssl is enabled
+			if (clientConfig != null &&
+				clientConfig.getBoolean(ConfigConstants.BLOB_CLIENT_SSL_ENABLED,
+						ConfigConstants.DEFAULT_BLOB_CLIENT_SSL_ENABLED)) {
+
+				LOG.info("Using ssl connection to the blob server");
+
+				String trustStoreFilePath = clientConfig.getString(
+						ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE,
+						null);
+				String trustStorePassword = clientConfig.getString(
+						ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE_PASSWORD,
+						null);
+				String sslVersion = clientConfig.getString(
+						ConfigConstants.BLOB_CLIENT_SSL_VERSION,
+						ConfigConstants.DEFAULT_BLOB_CLIENT_SSL_VERSION);
+
+				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+				trustStore.load(
+						new FileInputStream(new File(trustStoreFilePath)), trustStorePassword.toCharArray());
+
+				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
+						TrustManagerFactory.getDefaultAlgorithm());
+				trustManagerFactory.init(trustStore);
+
+				SSLContext sslContext =  SSLContext.getInstance(sslVersion);
+				sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+
+				this.socket = sslContext.getSocketFactory().createSocket(
+						serverAddress.getAddress(),
+						serverAddress.getPort());
+			} else {
+				this.socket = new Socket();
+				this.socket.connect(serverAddress);
+			}
+
 		}
-		catch(IOException e) {
+		catch(Exception e) {
 			BlobUtils.closeSilently(socket, LOG);
 			throw new IOException("Could not connect to BlobServer at address " + serverAddress, e);
 		}
@@ -671,14 +716,16 @@ public final class BlobClient implements Closeable {
 	 * Retrieves the {@link BlobServer} address from the JobManager and uploads
 	 * the JAR files to it.
 	 *
-	 * @param jobManager Server address of the {@link BlobServer}
-	 * @param askTimeout Ask timeout for blob server address retrieval
-	 * @param jars       List of JAR files to upload
+	 * @param jobManager   Server address of the {@link BlobServer}
+	 * @param askTimeout   Ask timeout for blob server address retrieval
+	 * @param clientConfig Any additional configuration for the blob client
+	 * @param jars         List of JAR files to upload
 	 * @throws IOException Thrown if the address retrieval or upload fails
 	 */
 	public static List<BlobKey> uploadJarFiles(
 			ActorGateway jobManager,
 			FiniteDuration askTimeout,
+			Configuration clientConfig,
 			List<Path> jars) throws IOException {
 
 		if (jars.isEmpty()) {
@@ -698,7 +745,7 @@ public final class BlobClient implements Closeable {
 					InetSocketAddress serverAddress = new InetSocketAddress(jmHostname, port);
 
 					// Now, upload
-					return uploadJarFiles(serverAddress, jars);
+					return uploadJarFiles(serverAddress, clientConfig, jars);
 				} else {
 					throw new Exception("Expected port number (int) as answer, received " + result);
 				}
@@ -712,16 +759,18 @@ public final class BlobClient implements Closeable {
 	 * Uploads the JAR files to a {@link BlobServer} at the given address.
 	 *
 	 * @param serverAddress Server address of the {@link BlobServer}
+	 * @param clientConfig Any additional configuration for the blob client
 	 * @param jars List of JAR files to upload
 	 * @throws IOException Thrown if the upload fails
 	 */
-	public static List<BlobKey> uploadJarFiles(InetSocketAddress serverAddress, List<Path> jars) throws IOException {
+	public static List<BlobKey> uploadJarFiles(InetSocketAddress serverAddress,
+			Configuration clientConfig, List<Path> jars) throws IOException {
 		if (jars.isEmpty()) {
 			return Collections.emptyList();
 		} else {
 			List<BlobKey> blobKeys = new ArrayList<>();
 
-			try (BlobClient blobClient = new BlobClient(serverAddress)) {
+			try (BlobClient blobClient = new BlobClient(serverAddress, clientConfig)) {
 				for (final Path jar : jars) {
 					final FileSystem fs = jar.getFileSystem();
 					FSDataInputStream is = null;

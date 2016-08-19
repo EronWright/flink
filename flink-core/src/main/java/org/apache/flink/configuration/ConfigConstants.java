@@ -147,6 +147,24 @@ public final class ConfigConstants {
 	 */
 	public static final String BLOB_FETCH_BACKLOG_KEY = "blob.fetch.backlog";
 
+	/** The config parameter to enable ssl while connecting to the blob server */
+	public static final String BLOB_CLIENT_SSL_ENABLED = "blob.client.ssl.enable";
+
+	/** The default value to enable ssl when connecting to the blob server */
+	public static final boolean DEFAULT_BLOB_CLIENT_SSL_ENABLED = false;
+
+	/** The config parameter for the path to the Java truststore to verify blob server's ssl certificate */
+	public static final String BLOB_CLIENT_SSL_TRUSTSTORE = "blob.client.ssl.truststore";
+
+	/** The config parameter for the secret to decrypt the Java truststore */
+	public static final String BLOB_CLIENT_SSL_TRUSTSTORE_PASSWORD = "blob.client.ssl.truststore.password";
+
+	/** The config parameter to define the ssl version to use to access the blob server */
+	public static final String BLOB_CLIENT_SSL_VERSION = "blob.client.ssl.version";
+
+	/** The default value for the ssl protocol to be used to access the blob server */
+	public static final String DEFAULT_BLOB_CLIENT_SSL_VERSION = "TLS";
+
 	/**
 	 * The config parameter defining the server port of the blob service.
 	 * The port can either be a port, such as "9123",
@@ -156,6 +174,27 @@ public final class ConfigConstants {
 	 * Setting the port to 0 will let the OS choose an available port.
 	 */
 	public static final String BLOB_SERVER_PORT = "blob.server.port";
+
+	/** The config parameter to enable ssl for connections to the blob server */
+	public static final String BLOB_SERVER_SSL_ENABLED = "blob.server.ssl.enable";
+
+	/** The default value to enable ssl for the blob server connections */
+	public static final boolean DEFAULT_BLOB_SERVER_SSL_ENABLED = false;
+
+	/** The path to the Java keystore containing blob server's private key and certificate to enable ssl access */
+	public static final String BLOB_SERVER_SSL_KEYSTORE = "blob.server.ssl.keystore";
+
+	/** The config parameter for the secret to decrypt the Java keystore */
+	public static final String BLOB_SERVER_SSL_KEYSTORE_PASSWORD = "blob.server.ssl.keystore.password";
+
+	/** The config parameter for the secret to decrypt the server key in the Java keystore */
+	public static final String BLOB_SERVER_SSL_KEY_PASSWORD = "blob.server.ssl.key.password";
+
+	/** The config parameter to define the ssl version for the blob server connections */
+	public static final String BLOB_SERVER_SSL_VERSION = "blob.server.ssl.version";
+
+	/** The default value for the ssl protocol to be supported by the the blob server */
+	public static final String DEFAULT_BLOB_SERVER_SSL_VERSION = "TLS";
 
 	/**
 	 * The config parameter defining the cleanup interval of the library cache manager.

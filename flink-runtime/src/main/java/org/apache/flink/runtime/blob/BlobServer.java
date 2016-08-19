@@ -28,12 +28,16 @@ import org.apache.flink.util.NetUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URL;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -59,6 +63,12 @@ public class BlobServer extends Thread implements BlobService {
 
 	/** The server socket listening for incoming connections. */
 	private final ServerSocket serverSocket;
+
+	/** The SSL server context if ssl is enabled for the connections */
+	private final SSLContext serverSSLContext;
+
+	/** Blob Server configuration */
+	private final Configuration blobServiceConfiguration;
 
 	/** Indicates whether a shutdown of server component has been requested. */
 	private final AtomicBoolean shutdownRequested = new AtomicBoolean();
@@ -91,6 +101,8 @@ public class BlobServer extends Thread implements BlobService {
 		checkNotNull(config, "Configuration");
 
 		RecoveryMode recoveryMode = RecoveryMode.fromConfig(config);
+
+		this.blobServiceConfiguration = config;
 
 		// configure and create the storage directory
 		String storageDirectory = config.getString(ConfigConstants.BLOB_STORAGE_DIRECTORY_KEY, null);
@@ -136,6 +148,47 @@ public class BlobServer extends Thread implements BlobService {
 			this.shutdownHook = null;
 		}
 
+		boolean enableSSL = config.getBoolean(
+				ConfigConstants.BLOB_SERVER_SSL_ENABLED,
+				ConfigConstants.DEFAULT_BLOB_SERVER_SSL_ENABLED);
+		if (enableSSL) {
+			LOG.info("Enabling ssl for the blob server");
+			try {
+				String keystoreFilePath = config.getString(
+					ConfigConstants.BLOB_SERVER_SSL_KEYSTORE,
+					null);
+
+				String keystorePassword = config.getString(
+					ConfigConstants.BLOB_SERVER_SSL_KEYSTORE_PASSWORD,
+					null);
+
+				String certPassword = config.getString(
+					ConfigConstants.BLOB_SERVER_SSL_KEY_PASSWORD,
+					null);
+
+				String sslVersion = config.getString(
+					ConfigConstants.BLOB_SERVER_SSL_VERSION,
+					ConfigConstants.DEFAULT_BLOB_SERVER_SSL_VERSION);
+
+				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+				ks.load(new FileInputStream(new File(keystoreFilePath)),
+					keystorePassword.toCharArray());
+
+				// Set up key manager factory to use the server key store
+				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+				kmf.init(ks, certPassword.toCharArray());
+
+				// Initialize the SSLContext
+				serverSSLContext = SSLContext.getInstance(sslVersion);
+				serverSSLContext.init(kmf.getKeyManagers(), null, null);
+
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSLContext for the blob server", e);
+			}
+		} else {
+			serverSSLContext = null;
+		}
+
 		//  ----------------------- start the server -------------------
 
 		String serverPortRange = config.getString(ConfigConstants.BLOB_SERVER_PORT, ConfigConstants.DEFAULT_BLOB_SERVER_PORT);
@@ -146,7 +199,11 @@ public class BlobServer extends Thread implements BlobService {
 		ServerSocket socketAttempt = NetUtils.createSocketFromPorts(ports, new NetUtils.SocketFactory() {
 			@Override
 			public ServerSocket createSocket(int port) throws IOException {
-				return new ServerSocket(port, finalBacklog);
+				if (serverSSLContext == null) {
+					return new ServerSocket(port, finalBacklog);
+				} else {
+					return serverSSLContext.getServerSocketFactory().createServerSocket(port, finalBacklog);
+				}
 			}
 		});
 
@@ -323,7 +380,8 @@ public class BlobServer extends Thread implements BlobService {
 
 	@Override
 	public BlobClient createClient() throws IOException {
-		return new BlobClient(new InetSocketAddress(serverSocket.getInetAddress(), getPort()));
+		return new BlobClient(new InetSocketAddress(serverSocket.getInetAddress(), getPort()),
+			blobServiceConfiguration);
 	}
 
 	/**

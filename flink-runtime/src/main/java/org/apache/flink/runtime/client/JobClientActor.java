@@ -26,6 +26,7 @@ import akka.actor.Terminated;
 import akka.dispatch.Futures;
 import akka.dispatch.OnSuccess;
 import org.apache.flink.configuration.ConfigConstants;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.akka.AkkaUtils;
 import org.apache.flink.runtime.akka.FlinkUntypedActor;
 import org.apache.flink.runtime.akka.ListeningBehaviour;
@@ -81,13 +82,19 @@ public class JobClientActor extends FlinkUntypedActor implements LeaderRetrieval
 	/** JobGraph which shall be submitted to the JobManager */
 	private JobGraph jobGraph;
 
+	/** The cluster configuration */
+	private final Configuration clientConfig;
+
 	public JobClientActor(
 			LeaderRetrievalService leaderRetrievalService,
 			FiniteDuration timeout,
-			boolean sysoutUpdates) {
+			boolean sysoutUpdates,
+			Configuration clientConfig) {
 		this.leaderRetrievalService = Preconditions.checkNotNull(leaderRetrievalService);
 		this.timeout = Preconditions.checkNotNull(timeout);
 		this.sysoutUpdates = sysoutUpdates;
+		this.clientConfig = clientConfig;
+
 	}
 
 	@Override
@@ -366,7 +373,7 @@ public class JobClientActor extends FlinkUntypedActor implements LeaderRetrieval
 					LOG.info("Upload jar files to job manager {}.", jobManager.path());
 
 					try {
-						jobGraph.uploadUserJars(jobManagerGateway, timeout);
+						jobGraph.uploadUserJars(jobManagerGateway, timeout, clientConfig);
 					} catch (IOException exception) {
 						getSelf().tell(
 							decorateMessage(new JobManagerMessages.JobResultFailure(
@@ -437,11 +444,13 @@ public class JobClientActor extends FlinkUntypedActor implements LeaderRetrieval
 	public static Props createJobClientActorProps(
 			LeaderRetrievalService leaderRetrievalService,
 			FiniteDuration timeout,
-			boolean sysoutUpdates) {
+			boolean sysoutUpdates,
+			Configuration clientConfig) {
 		return Props.create(
 			JobClientActor.class,
 			leaderRetrievalService,
 			timeout,
-			sysoutUpdates);
+			sysoutUpdates,
+			clientConfig);
 	}
 }

@@ -140,6 +140,24 @@ will be used under the directory specified by jobmanager.web.tmpdir.
 
 - `blob.server.port`: Port definition for the blob server (serving user jar's) on the Taskmanagers. By default the port is set to 0, which means that the operating system is picking an ephemeral port. Flink also accepts a list of ports ("50100,50101"), ranges ("50100-50200") or a combination of both. It is recommended to set a range of ports to avoid collisions when multiple JobManagers are running on the same machine.
 
+- `blob.server.ssl.enable`: The config parameter to enable ssl for connections to the blob server (DEFAULT: false).
+
+- `blob.server.ssl.keystore`: The path to the Java keystore containing blob server's private key and certificate to enable ssl access.
+
+- `blob.server.ssl.keystore.password`: The secret to decrypt the configured Java keystore.
+
+- `blob.server.ssl.key.password`: The secret to decrypt the server key in the Java keystore.
+
+- `blob.server.ssl.version`: The ssl version which has to be supported by the blob server (DEFAULT: TLS).
+
+- `blob.client.ssl.enable`: The config parameter to enable ssl to connect to the blob server (DEFAULT: false).
+
+- `blob.client.ssl.truststore`: The path to the Java truststore to verify blob server's ssl certificate.
+
+- `blob.client.ssl.truststore.password`: The secret to decrypt the Java truststore.
+
+- `blob.client.ssl.version`: The ssl version which has to be used to connected to the blob server (DEFAULT: TLS).
+
 - `restart-strategy`: Default restart strategy to use in case that no restart strategy has been specified for the submitted job.
 Currently, it can be chosen from fixed delay restart strategy, failure rate restart strategy or no restart strategy.
 To use the fixed delay strategy you have to specify "fixed-delay".
