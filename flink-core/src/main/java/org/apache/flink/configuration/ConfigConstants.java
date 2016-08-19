@@ -634,7 +634,7 @@ public final class ConfigConstants {
 	 */
 	public static final String AKKA_SSL_ENABLE = "akka.ssl.enabled";
 
-	/** The Java keystore file to be used by the JobManager for the SSL Server */
+	/** The Java keystore file to be used by the Akka endpoints for SSL connection to its remote peers */
 	public static final String AKKA_SSL_KEYSTORE = "akka.ssl.keystore";
 
 	/** secret to decrypt the keystore file */
@@ -643,7 +643,7 @@ public final class ConfigConstants {
 	/** secret to decrypt the server key */
 	public static final String AKKA_SSL_KEY_PASSWORD = "akka.ssl.key.password";
 
-	/** the truststore file containing the public CA certificates to be used by clients to verify server SSL certificate */
+	/** the truststore file containing the public CA certificates to be used by akka endpoint to verify peer's SSL certificate */
 	public static final String AKKA_SSL_TRUSTSTORE = "akka.ssl.truststore";
 
 	/** secret to decrypt the truststore */

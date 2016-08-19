@@ -29,6 +29,7 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.router.Handler;
 import io.netty.handler.codec.http.router.Router;
 import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
 import org.apache.commons.io.FileUtils;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
@@ -381,6 +382,7 @@ public class WebRuntimeMonitor implements WebMonitor {
 
 				ch.pipeline()
 						.addLast(new HttpServerCodec())
+						.addLast(new ChunkedWriteHandler())
 						.addLast(new HttpRequestHandler(uploadDir))
 						.addLast(handler.name(), handler)
 						.addLast(new PipelineErrorHandler(LOG));
