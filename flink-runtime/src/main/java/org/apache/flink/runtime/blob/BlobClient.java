@@ -18,7 +18,6 @@
 
 package org.apache.flink.runtime.blob;
 
-import org.apache.commons.logging.Log;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
