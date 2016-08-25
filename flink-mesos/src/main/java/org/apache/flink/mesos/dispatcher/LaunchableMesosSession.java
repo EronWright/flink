@@ -2,10 +2,12 @@ package org.apache.flink.mesos.dispatcher;
 
 import com.netflix.fenzo.TaskAssignmentResult;
 import com.netflix.fenzo.TaskRequest;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
+import org.apache.flink.mesos.dispatcher.types.SessionDefaults;
 import org.apache.flink.mesos.dispatcher.types.SessionParameters;
 import org.apache.flink.mesos.runtime.clusterframework.MesosApplicationMasterRunner;
 import org.apache.flink.mesos.runtime.clusterframework.MesosConfigKeys;
@@ -43,6 +45,8 @@ public class LaunchableMesosSession implements LaunchableTask {
 
 	MesosArtifactResolver artifactResolver;
 
+	private final SessionDefaults sessionDefaults;
+
 	//private final MesosAppMasterParameters params;
 	private final SessionParameters params;
 
@@ -56,8 +60,14 @@ public class LaunchableMesosSession implements LaunchableTask {
 	 * @param template a template for the TaskInfo to be constructed at launch time.
 	 * @param taskID the taskID for this worker.
 	 */
-	public LaunchableMesosSession(MesosArtifactResolver artifactResolver, SessionParameters params, Protos.TaskInfo.Builder template, Protos.TaskID taskID) {
+	public LaunchableMesosSession(
+			MesosArtifactResolver artifactResolver,
+			SessionDefaults sessionDefaults,
+			SessionParameters params,
+			Protos.TaskInfo.Builder template,
+			Protos.TaskID taskID) {
 		this.artifactResolver = artifactResolver;
+		this.sessionDefaults = sessionDefaults;
 		this.params = params;
 		this.template = template;
 		this.taskID = taskID;
@@ -129,6 +139,11 @@ public class LaunchableMesosSession implements LaunchableTask {
 			dynamicProperties.setInteger(key, port);
 		}
 
+		// override the ZK namespace
+		String zkNamespace = ZKPaths.makePath(sessionDefaults.getSessionRootNamespace(),
+			this.params.jobID().toString());
+		dynamicProperties.setString(ConfigConstants.HA_ZOOKEEPER_NAMESPACE_KEY, zkNamespace);
+
 		// propagate the Mesos task ID to the session
 		environmentBuilder
 			.addVariables(variable(ENV_FLINK_CONTAINER_ID, taskInfo.getTaskId().getValue()))
@@ -167,6 +182,14 @@ public class LaunchableMesosSession implements LaunchableTask {
 		cmdBuilder.addUris(uri(flinkJarURL.get(), true));
 		classPathBuilder.append("flink.jar").append(File.pathSeparator);
 
+		// flink-conf.yaml
+		Option<URL> confURL = artifactResolver.resolve(params.jobID(), new Path("flink-conf.yaml"));
+		if(confURL.isEmpty()) {
+			throw new RuntimeException("unable to resolve flink-conf.yaml");
+		}
+		cmdBuilder.addUris(uri(confURL.get(), true));
+		classPathBuilder.append("flink-conf.yaml").append(File.pathSeparator);
+
 		// user artifacts
 		for(SessionParameters.Artifact file : params.artifacts()) {
 
@@ -176,10 +199,10 @@ public class LaunchableMesosSession implements LaunchableTask {
 			cmdBuilder.addUris(uri(url.get(), file.cacheable()));
 
 			// instruct the JobMaster to ship the artifact to the TM also
-			tmShipFileList.append(file.localPath()).append(',');
+			tmShipFileList.append(file.remotePath()).append(',');
 
-			// generate the JM/TM classpath
-			classPathBuilder.append(file.localPath()).append(File.pathSeparator);
+			// generate the JM classpath
+			classPathBuilder.append(file.remotePath()).append(File.pathSeparator);
 		}
 		environmentBuilder
 			.addVariables(variable(ENV_CLASSPATH, classPathBuilder.toString()))

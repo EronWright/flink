@@ -22,13 +22,16 @@ import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Props;
 import com.typesafe.config.Config;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.mesos.dispatcher.store.MesosSessionStore;
+import org.apache.flink.mesos.dispatcher.types.SessionDefaults;
 import org.apache.flink.mesos.dispatcher.types.SessionParameters;
 import org.apache.flink.mesos.util.MesosArtifactServer;
 import org.apache.flink.mesos.util.MesosConfiguration;
@@ -47,6 +50,7 @@ import org.slf4j.LoggerFactory;
 import scala.Option;
 import scala.Tuple2;
 
+import java.io.File;
 import java.net.InetAddress;
 import java.net.URL;
 import java.util.ArrayList;
@@ -137,12 +141,16 @@ public class MesosDispatcherRunner {
 
 			initializeSessionStore(sessionStore);
 
+			SessionDefaults sessionDefaults = createSessionDefaults(config);
+
 			MesosArtifactServer artifactServer = new MesosArtifactServer("placeholder", dispatcherHostname, 0);
+
+			Path flinkJarPath = new Path(new File("flink.jar").toURI());
 
 			Props dispatcherProps = MesosDispatcherBackend.createActorProps(
 				MesosDispatcherBackend.class,
-				config, mesosConfig, jmTaskInfo, sessionStore, leaderElectionService, artifactServer,
-				new Path("flink.jar"),
+				config, mesosConfig, jmTaskInfo, sessionStore, sessionDefaults, leaderElectionService, artifactServer,
+				flinkJarPath,
 				LOG);
 
 			ActorRef dispatcher = actorSystem.actorOf(dispatcherProps, "Mesos_Dispatcher");
@@ -174,11 +182,11 @@ public class MesosDispatcherRunner {
 
 	private static void initializeSessionStore(MesosSessionStore store) throws Exception {
 
-		List<SessionParameters.Artifact> artifacts = new ArrayList<>();
-		//artifacts.add(new SessionParameters.Artifact(new URL("http://127.0.0.1:8000/flink-conf.yaml"), false));
-		//artifacts.add(new SessionParameters.Artifact(new URL("http://127.0.0.1:8000/flink.jar"), false));
+		Configuration sessionConfiguration = GlobalConfiguration.loadConfiguration();
 
+		// artifacts
 		Path workingDir = FileSystem.getLocalFileSystem().getWorkingDirectory();
+		List<SessionParameters.Artifact> artifacts = new ArrayList<>();
 		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "log4j.properties"), "log4j.properties", false));
 		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "log4j-1.2.17.jar"), "log4j-1.2.17.jar", false));
 		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "slf4j-log4j12-1.7.7.jar"), "slf4j-log4j12-1.7.7.jar", false));
@@ -190,6 +198,7 @@ public class MesosDispatcherRunner {
 			1,
 			1,
 			JobID.generate(),
+			sessionConfiguration,
 			artifacts,
 			null
 		);
@@ -197,6 +206,17 @@ public class MesosDispatcherRunner {
 		MesosSessionStore.Session session = MesosSessionStore.Session.newTask(params, store.newTaskID());
 
 		store.putSession(session);
+	}
+
+	private static SessionDefaults createSessionDefaults(Configuration flinkConfig) {
+		String dispatcherNamespace = flinkConfig.getString(
+			ConfigConstants.HA_ZOOKEEPER_NAMESPACE_KEY,
+			ConfigConstants.DEFAULT_ZOOKEEPER_NAMESPACE_KEY);
+
+		SessionDefaults defaults = new SessionDefaults(
+			ZKPaths.makePath(dispatcherNamespace, "sessions"));
+
+		return defaults;
 	}
 
 	private static Protos.TaskInfo.Builder createJobMasterTaskInfoTemplate() {
