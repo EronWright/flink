@@ -178,7 +178,7 @@ public class MesosArtifactServer {
 	}
 
 	public synchronized Option<URL> resolve(Path remoteFile) {
-		Option<URL> resolved = Option.apply(paths.getOrDefault(paths.get(remoteFile), null));
+		Option<URL> resolved = Option.apply(paths.getOrDefault(remoteFile, null));
 		return resolved;
 	}
 

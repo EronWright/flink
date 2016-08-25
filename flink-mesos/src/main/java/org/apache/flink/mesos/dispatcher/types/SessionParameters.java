@@ -33,15 +33,16 @@ public class SessionParameters implements Serializable {
 
 	private List<ProgramSpec> programSpec;
 
-	private Configuration configuration = new Configuration();
+	private Configuration configuration;
 
-	public SessionParameters(String username, ResourceProfile jmProfile, ResourceProfile tmProfile, int tmCount, int slots, JobID jobID, List<Artifact> artifacts, List<ProgramSpec> programSpec) {
+	public SessionParameters(String username, ResourceProfile jmProfile, ResourceProfile tmProfile, int tmCount, int slots, JobID jobID, Configuration configuration, List<Artifact> artifacts, List<ProgramSpec> programSpec) {
 		this.username = username;
 		this.jmProfile = jmProfile;
 		this.tmProfile = tmProfile;
 		this.tmCount = tmCount;
 		this.slots = slots;
 		this.jobID = jobID;
+		this.configuration = configuration;
 		this.artifacts = artifacts;
 		this.programSpec = programSpec;
 	}

@@ -6,11 +6,14 @@ import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.TaskScheduler;
 import com.netflix.fenzo.VirtualMachineLease;
 import com.netflix.fenzo.functions.Action1;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.mesos.dispatcher.store.MesosSessionStore;
+import org.apache.flink.mesos.dispatcher.types.SessionDefaults;
 import org.apache.flink.mesos.dispatcher.types.SessionID;
 import org.apache.flink.mesos.dispatcher.types.SessionIDRetrievable;
 import org.apache.flink.mesos.dispatcher.types.SessionParameters;
@@ -20,11 +23,14 @@ import org.apache.flink.mesos.scheduler.messages.Error;
 import org.apache.flink.mesos.util.MesosArtifactResolver;
 import org.apache.flink.mesos.util.MesosArtifactServer;
 import org.apache.flink.mesos.util.MesosConfiguration;
+import org.apache.flink.mesos.util.ZooKeeperUtils;
+import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.clusterframework.messages.FatalErrorOccurred;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.mesos.Protos;
 import org.apache.mesos.SchedulerDriver;
+import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import scala.Option;
 
@@ -79,11 +85,14 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 
 	private MesosArtifactServer artifactServer;
 
+	private SessionDefaults sessionDefaults;
+
 	public MesosDispatcherBackend(
 		Configuration flinkConfig,
 		MesosConfiguration mesosConfig,
 		Protos.TaskInfo.Builder appMasterTaskInfo,
 		MesosSessionStore sessionStore,
+		SessionDefaults sessionDefaults,
 		LeaderElectionService leaderElectionService,
 		MesosArtifactServer artifactServer,
 		Path flinkJar) {
@@ -93,6 +102,7 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		this.mesosConfig = requireNonNull(mesosConfig);
 		this.appMasterTaskInfo = requireNonNull(appMasterTaskInfo);
 		this.sessionStore = requireNonNull(sessionStore);
+		this.sessionDefaults = requireNonNull(sessionDefaults);
 		this.artifactServer = artifactServer;
 
 		this.mastersInNew = new HashMap<>();
@@ -501,6 +511,7 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		MesosConfiguration mesosConfig,
 		Protos.TaskInfo.Builder jmTaskInfoTemplate,
 		MesosSessionStore sessionStore,
+		SessionDefaults sessionDefaults,
 		LeaderElectionService leaderElectionService,
 		MesosArtifactServer artifactServer,
 		Path flinkJar,
@@ -511,6 +522,7 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 			mesosConfig,
 			jmTaskInfoTemplate,
 			sessionStore,
+			sessionDefaults,
 			leaderElectionService,
 			artifactServer,
 			flinkJar);
@@ -530,79 +542,13 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		private Path flinkJar;
 
 		private SessionState(Path flinkJar) {
-
 			this.flinkJar = flinkJar;
-//			// all sessions are provided the flink JAR
-//			// todo consider versioning
-//			try {
-//				flinkJarURL = artifactServer.addPath(flinkJar, "flink.jar");
-//			} catch (IOException e) {
-//				throw new RuntimeException("unable to serve Flink jar", e);
-//			}
 		}
 
-/*
 		private LaunchableMesosSession createLaunchableMesosSession(MesosSessionStore.Session session) {
 
 			SessionParameters params = session.params();
-
-			Protos.TaskInfo.Builder taskInfo = appMasterTemplate.clone();
-			final Protos.CommandInfo.Builder cmdBuilder = taskInfo.getCommandBuilder();
-			final Protos.Environment.Builder environmentBuilder = cmdBuilder.getEnvironmentBuilder();
-
-			// process the artifacts
-			StringBuilder classPathBuilder = new StringBuilder();
-			StringBuilder tmShipFileList = new StringBuilder();
-
-			// flink.jar
-			cmdBuilder.addUris(uri(flinkJarURL, true));
-			classPathBuilder.append("flink.jar").append(File.pathSeparator);
-
-			// flink-conf.yaml
-			URL confURL;
-			try {
-				confURL = artifactServer.addPath(new Path("flink-conf.yaml"), "flink-conf.yaml");
-			} catch (IOException e) {
-				throw new RuntimeException("unusable artifact: " + "flink-conf.yaml", e);
-			}
-			cmdBuilder.addUris(uri(confURL, true));
-
-			// user artifacts
-			for(SessionParameters.Artifact file : params.artifacts()) {
-
-				// serve the artifact
-				Protos.CommandInfo.URI uri;
-				URL url;
-				try {
-					url = artifactServer.addPath(file.localPath(), file.remotePath());
-				} catch (Exception e) {
-//					LOG.error("the artifact couldn't be added to the artifact server", e);
-					throw new RuntimeException("unusable artifact: " + file.localPath(), e);
-				}
-
-				// provide the artifact to the JobMaster
-				cmdBuilder.addUris(uri(url, file.cacheable()));
-
-				// instruct the JobMaster to ship the artifact to the TM also
-				tmShipFileList.append(file.localPath()).append(',');
-
-				// generate the JM/TM classpath
-				classPathBuilder.append(file.localPath()).append(File.pathSeparator);
-			}
-			environmentBuilder
-				.addVariables(variable(ENV_CLASSPATH, classPathBuilder.toString()))
-				.addVariables(variable(ENV_FLINK_CLASSPATH, classPathBuilder.toString()))
-				.addVariables(variable(ENV_CLIENT_SHIP_FILES, tmShipFileList.toString()));
-
-			LaunchableMesosSession launchable =
-				new LaunchableMesosSession(session.params(), taskInfo, session.taskID());
-			return launchable;
-		}
-*/
-		private LaunchableMesosSession createLaunchableMesosSession(MesosSessionStore.Session session) {
-
-			Path sessionRemotePath = new Path(session.taskID().getValue());
-			SessionParameters params = session.params();
+			Path sessionRemotePath = new Path(params.jobID().toString());
 
 			// register the artifacts needed by the task with the artifact server.
 			// flink.jar
@@ -612,26 +558,33 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 				throw new RuntimeException("failed to add flink jar to artifact server", e);
 			}
 
-//			// flink-conf.yaml
-//			URL confURL;
-//			try {
-//				confURL = artifactServer.addPath(new Path("flink-conf.yaml"), "flink-conf.yaml");
-//			} catch (IOException e) {
-//				throw new RuntimeException("unusable artifact: " + "flink-conf.yaml", e);
-//			}
+			// flink-conf.yaml
+			URL confURL;
+			try {
+				File tempFile = File.createTempFile("flink-conf-", ".yaml");
+				tempFile.deleteOnExit();
+				BootstrapTools.writeConfiguration(session.params().configuration(), tempFile);
+				LOG.info("Wrote session configuration to: {}", tempFile);
+
+				confURL = artifactServer.addPath(
+					new Path(tempFile.toURI()), new Path(sessionRemotePath, "flink-conf.yaml"));
+
+			} catch (IOException e) {
+				throw new RuntimeException("failed to add flink-conf.yaml to artifact server", e);
+			}
 
 			// user artifacts
 			for(SessionParameters.Artifact file : params.artifacts()) {
 				try {
 					artifactServer.addPath(file.localPath(), new Path(sessionRemotePath, file.remotePath()));
 				} catch (Exception e) {
-//					LOG.error("the artifact couldn't be added to the artifact server", e);
+					LOG.error("the artifact couldn't be added to the artifact server", e);
 					throw new RuntimeException("unusable artifact: " + file.localPath(), e);
 				}
 			}
 
 			LaunchableMesosSession launchable =
-				new LaunchableMesosSession(this, session.params(), appMasterTaskInfo, session.taskID());
+				new LaunchableMesosSession(this, sessionDefaults, session.params(), appMasterTaskInfo, session.taskID());
 			return launchable;
 		}
 
