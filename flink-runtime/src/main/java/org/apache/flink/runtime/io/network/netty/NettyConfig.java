@@ -47,6 +47,36 @@ public class NettyConfig {
 
 	public static final String TRANSPORT_TYPE = "taskmanager.net.transport";
 
+	/**
+	 * Config parameter to enable SSL on the Netty transport
+	 */
+	public static final String SSL_ENABLED = "taskmanager.net.ssl.enable";
+
+	/** The default value to enable ssl */
+	public static final boolean DEFAULT_SSL_ENABLED = false;
+
+	/** The SSL protocol version to be supported by the SSL connection */
+	public static final String SSL_VERSION = "taskmanager.net.ssl.version";
+
+	/** The default value for the ssl protocol */
+	public static final String DEFAULT_SSL_VERSION = "TLS";
+
+	/** The Java keystore file location which contains the certificate and key for the SSL connection */
+	public static final String SSL_KEYSTORE = "taskmanager.net.ssl.keystore";
+
+	/** The secret to decrypt the keystore file */
+	public static final String SSL_KEYSTORE_PASSWORD = "taskmanager.net.ssl.keystore.password";
+
+	/** The secret to decrypt the server key */
+	public static final String SSL_KEY_PASSWORD = "taskmanager.net.ssl.key.password";
+
+	/** The config parameter for the path to the Java truststore to verify the ssl certificate */
+	public static final String SSL_TRUSTSTORE = "taskmanager.net.ssl.truststore";
+
+	/** The config parameter for the secret to decrypt the Java truststore */
+	public static final String SSL_TRUSTSTORE_PASSWORD = "taskmanager.net.ssl.truststore.password";
+
+
 	// ------------------------------------------------------------------------
 
 	enum TransportType {
@@ -204,11 +234,40 @@ public class NettyConfig {
 		}
 	}
 
+	public boolean getSSLEnabled() {
+		return config.getBoolean(SSL_ENABLED, DEFAULT_SSL_ENABLED);
+	}
+
+	public String getSSLVersion() {
+		return config.getString(SSL_VERSION, DEFAULT_SSL_VERSION);
+	}
+
+	public String getSSLKeyStorePath() {
+		return config.getString(SSL_KEYSTORE, null);
+	}
+
+	public String getSSLKeyStorePassword() {
+		return config.getString(SSL_KEYSTORE_PASSWORD, null);
+	}
+
+	public String getSSLKeyPassword() {
+		return config.getString(SSL_KEY_PASSWORD, null);
+	}
+
+	public String getSSLTrustStorePath() {
+		return config.getString(SSL_TRUSTSTORE, null);
+	}
+
+	public String getSSLTrustStorePassword() {
+		return config.getString(SSL_TRUSTSTORE_PASSWORD, null);
+	}
+
 	@Override
 	public String toString() {
 		String format = "NettyConfig [" +
 				"server address: %s, " +
 				"server port: %d, " +
+				"ssl enabled: %s, " +
 				"memory segment size (bytes): %d, " +
 				"transport type: %s, " +
 				"number of server threads: %d (%s), " +
@@ -220,8 +279,9 @@ public class NettyConfig {
 		String def = "use Netty's default";
 		String man = "manual";
 
-		return String.format(format, serverAddress, serverPort, memorySegmentSize,
-				getTransportType(), getServerNumThreads(), getServerNumThreads() == 0 ? def : man,
+		return String.format(format, serverAddress, serverPort, getSSLEnabled() ? "true":"false",
+				memorySegmentSize, getTransportType(), getServerNumThreads(),
+				getServerNumThreads() == 0 ? def : man,
 				getClientNumThreads(), getClientNumThreads() == 0 ? def : man,
 				getServerConnectBacklog(), getServerConnectBacklog() == 0 ? def : man,
 				getClientConnectTimeoutSeconds(), getSendAndReceiveBufferSize(),

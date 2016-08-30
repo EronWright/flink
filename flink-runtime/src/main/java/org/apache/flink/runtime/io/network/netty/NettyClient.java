@@ -28,11 +28,18 @@ import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.security.KeyStore;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
@@ -43,6 +50,8 @@ class NettyClient {
 	private final NettyConfig config;
 
 	private Bootstrap bootstrap;
+
+	private SSLContext clientSSLContext;
 
 	NettyClient(NettyConfig config) {
 		this.config = config;
@@ -99,6 +108,27 @@ class NettyClient {
 			bootstrap.option(ChannelOption.SO_RCVBUF, receiveAndSendBufferSize);
 		}
 
+		if (config.getSSLEnabled()) {
+			try {
+				LOG.info("Configuring SSL for the Netty client");
+				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+				trustStore.load(
+					new FileInputStream(new File(config.getSSLTrustStorePath())),
+					config.getSSLTrustStorePassword().toCharArray());
+
+				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
+					TrustManagerFactory.getDefaultAlgorithm());
+				trustManagerFactory.init(trustStore);
+
+				clientSSLContext = SSLContext.getInstance(config.getSSLVersion());
+				clientSSLContext.init(null, trustManagerFactory.getTrustManagers(), null);
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSL Context for the Netty client", e);
+			}
+		} else {
+			clientSSLContext = null;
+		}
+
 		// --------------------------------------------------------------------
 		// Child channel pipeline for accepted connections
 		// --------------------------------------------------------------------
@@ -106,6 +136,11 @@ class NettyClient {
 		bootstrap.handler(new ChannelInitializer<SocketChannel>() {
 			@Override
 			public void initChannel(SocketChannel channel) throws Exception {
+				if (clientSSLContext != null) {
+					SSLEngine sslEngine = clientSSLContext.createSSLEngine();
+					sslEngine.setUseClientMode(true);
+					channel.pipeline().addLast("ssl", new SslHandler(sslEngine));
+				}
 				channel.pipeline().addLast(protocol.getClientChannelHandlers());
 			}
 		});

@@ -29,10 +29,17 @@ import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.security.KeyStore;
 import java.util.concurrent.ThreadFactory;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -49,6 +56,8 @@ class NettyServer {
 	private ServerBootstrap bootstrap;
 
 	private ChannelFuture bindFuture;
+
+	private SSLContext serverSSLContext;
 
 	NettyServer(NettyConfig config) {
 		this.config = checkNotNull(config);
@@ -111,6 +120,30 @@ class NettyServer {
 		bootstrap.childOption(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, config.getMemorySegmentSize() + 1);
 		bootstrap.childOption(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 2 * config.getMemorySegmentSize());
 
+		// SSL related configuration
+		if (config.getSSLEnabled()) {
+			try {
+				LOG.info("Configuring SSL for the Netty Server");
+
+				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+				ks.load(new FileInputStream(new File(config.getSSLKeyStorePath())),
+					config.getSSLKeyStorePassword().toCharArray());
+
+				// Set up key manager factory to use the server key store
+				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+				kmf.init(ks, config.getSSLKeyPassword().toCharArray());
+
+				// Initialize the SSLContext
+				serverSSLContext = SSLContext.getInstance(config.getSSLVersion());
+				serverSSLContext.init(kmf.getKeyManagers(), null, null);
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSL Context for the Netty Server", e);
+			}
+		} else {
+			serverSSLContext = null;
+		}
+
+
 		// --------------------------------------------------------------------
 		// Child channel pipeline for accepted connections
 		// --------------------------------------------------------------------
@@ -118,6 +151,12 @@ class NettyServer {
 		bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
 			@Override
 			public void initChannel(SocketChannel channel) throws Exception {
+				if (serverSSLContext != null) {
+					SSLEngine sslEngine = serverSSLContext.createSSLEngine();
+					sslEngine.setUseClientMode(false);
+					channel.pipeline().addLast("ssl", new SslHandler(sslEngine));
+				}
+
 				channel.pipeline().addLast(protocol.getServerChannelHandlers());
 			}
 		});
