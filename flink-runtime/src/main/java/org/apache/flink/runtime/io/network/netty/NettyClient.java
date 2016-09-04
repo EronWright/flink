@@ -34,11 +34,12 @@ import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.SocketAddress;
+import java.net.InetSocketAddress;
 import java.security.KeyStore;
 
 import static org.apache.flink.util.Preconditions.checkState;
@@ -48,6 +49,8 @@ class NettyClient {
 	private static final Logger LOG = LoggerFactory.getLogger(NettyClient.class);
 
 	private final NettyConfig config;
+
+	private NettyProtocol protocol;
 
 	private Bootstrap bootstrap;
 
@@ -59,6 +62,8 @@ class NettyClient {
 
 	void init(final NettyProtocol protocol, NettyBufferPool nettyBufferPool) throws IOException {
 		checkState(bootstrap == null, "Netty client has already been initialized.");
+
+		this.protocol = protocol;
 
 		long start = System.currentTimeMillis();
 
@@ -129,22 +134,6 @@ class NettyClient {
 			clientSSLContext = null;
 		}
 
-		// --------------------------------------------------------------------
-		// Child channel pipeline for accepted connections
-		// --------------------------------------------------------------------
-
-		bootstrap.handler(new ChannelInitializer<SocketChannel>() {
-			@Override
-			public void initChannel(SocketChannel channel) throws Exception {
-				if (clientSSLContext != null) {
-					SSLEngine sslEngine = clientSSLContext.createSSLEngine();
-					sslEngine.setUseClientMode(true);
-					channel.pipeline().addLast("ssl", new SslHandler(sslEngine));
-				}
-				channel.pipeline().addLast(protocol.getClientChannelHandlers());
-			}
-		});
-
 		long end = System.currentTimeMillis();
 		LOG.info("Successful initialization (took {} ms).", (end - start));
 	}
@@ -193,8 +182,29 @@ class NettyClient {
 	// Client connections
 	// ------------------------------------------------------------------------
 
-	ChannelFuture connect(SocketAddress serverSocketAddress) {
+	ChannelFuture connect(final InetSocketAddress serverSocketAddress) {
 		checkState(bootstrap != null, "Client has not been initialized yet.");
+
+		// --------------------------------------------------------------------
+		// Child channel pipeline for accepted connections
+		// --------------------------------------------------------------------
+
+		bootstrap.handler(new ChannelInitializer<SocketChannel>() {
+			@Override
+			public void initChannel(SocketChannel channel) throws Exception {
+				if (clientSSLContext != null) {
+					SSLEngine sslEngine = clientSSLContext.createSSLEngine(
+						serverSocketAddress.getAddress().getHostAddress(),
+						serverSocketAddress.getPort());
+					sslEngine.setUseClientMode(true);
+					SSLParameters newSslParameters = sslEngine.getSSLParameters();
+					newSslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+					sslEngine.setSSLParameters(newSslParameters);
+					channel.pipeline().addLast("ssl", new SslHandler(sslEngine));
+				}
+				channel.pipeline().addLast(protocol.getClientChannelHandlers());
+			}
+		});
 
 		try {
 			return bootstrap.connect(serverSocketAddress);
