@@ -123,6 +123,8 @@ public class StaticFileServerHandler extends SimpleChannelInboundHandler<Routed>
 	/** The path in which the static documents are */
 	private final File rootPath;
 
+	private final boolean httpsEnabled;
+
 	/** The log for all error reporting */
 	private final Logger logger;
 
@@ -132,9 +134,10 @@ public class StaticFileServerHandler extends SimpleChannelInboundHandler<Routed>
 			JobManagerRetriever retriever,
 			Future<String> localJobManagerAddressPromise,
 			FiniteDuration timeout,
-			File rootPath) throws IOException {
+			File rootPath,
+			boolean httpsEnabled) throws IOException {
 
-		this(retriever, localJobManagerAddressPromise, timeout, rootPath, DEFAULT_LOGGER);
+		this(retriever, localJobManagerAddressPromise, timeout, rootPath, httpsEnabled, DEFAULT_LOGGER);
 	}
 
 	public StaticFileServerHandler(
@@ -142,12 +145,14 @@ public class StaticFileServerHandler extends SimpleChannelInboundHandler<Routed>
 			Future<String> localJobManagerAddressFuture,
 			FiniteDuration timeout,
 			File rootPath,
+			boolean httpsEnabled,
 			Logger logger) throws IOException {
 
 		this.retriever = checkNotNull(retriever);
 		this.localJobManagerAddressFuture = checkNotNull(localJobManagerAddressFuture);
 		this.timeout = checkNotNull(timeout);
 		this.rootPath = checkNotNull(rootPath).getCanonicalFile();
+		this.httpsEnabled = httpsEnabled;
 		this.logger = checkNotNull(logger);
 	}
 
@@ -183,7 +188,8 @@ public class StaticFileServerHandler extends SimpleChannelInboundHandler<Routed>
 					localJobManagerAddress, jobManager.get());
 
 				if (redirectAddress != null) {
-					HttpResponse redirect = HandlerRedirectUtils.getRedirectResponse(redirectAddress, requestPath);
+					HttpResponse redirect = HandlerRedirectUtils.getRedirectResponse(
+						redirectAddress, requestPath, httpsEnabled);
 					KeepAliveWrite.flush(ctx, routed.request(), redirect);
 				}
 				else {

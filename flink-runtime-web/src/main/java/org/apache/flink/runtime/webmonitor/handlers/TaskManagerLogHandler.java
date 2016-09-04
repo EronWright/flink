@@ -117,8 +117,9 @@ public class TaskManagerLogHandler extends RuntimeMonitorHandlerBase {
 		Future<String> localJobManagerAddressPromise,
 		FiniteDuration timeout,
 		FileMode fileMode,
-		Configuration config) throws IOException {
-		super(retriever, localJobManagerAddressPromise, timeout);
+		Configuration config,
+		boolean httpsEnabled) throws IOException {
+		super(retriever, localJobManagerAddressPromise, timeout, httpsEnabled);
 
 		this.executor = checkNotNull(executor);
 		this.config = config;

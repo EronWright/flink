@@ -67,8 +67,9 @@ public class RuntimeMonitorHandler extends RuntimeMonitorHandlerBase {
 			RequestHandler handler,
 			JobManagerRetriever retriever,
 			Future<String> localJobManagerAddressFuture,
-			FiniteDuration timeout) {
-		super(retriever, localJobManagerAddressFuture, timeout);
+			FiniteDuration timeout,
+			boolean httpsEnabled) {
+		super(retriever, localJobManagerAddressFuture, timeout, httpsEnabled);
 		this.handler = checkNotNull(handler);
 	}
 
