@@ -50,6 +50,7 @@ public abstract class RuntimeMonitorHandlerBase extends SimpleChannelInboundHand
 
 	protected final FiniteDuration timeout;
 
+	/** Whether the web service has https enabled */
 	private final boolean httpsEnabled;
 
 	protected String localJobManagerAddress;

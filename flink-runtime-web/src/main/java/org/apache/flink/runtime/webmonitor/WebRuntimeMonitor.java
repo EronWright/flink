@@ -240,8 +240,16 @@ public class WebRuntimeMonitor implements WebMonitor {
 					ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_VERSION);
 
 				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-				ks.load(new FileInputStream(new File(keystoreFilePath)),
-					keystorePassword.toCharArray());
+
+				FileInputStream keyStoreFile = null;
+				try {
+					keyStoreFile = new FileInputStream(new File(keystoreFilePath));
+					ks.load(keyStoreFile, keystorePassword.toCharArray());
+				} finally {
+					if (keyStoreFile != null) {
+						keyStoreFile.close();
+					}
+				}
 
 				// Set up key manager factory to use the server key store
 				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());

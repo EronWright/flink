@@ -123,6 +123,7 @@ public class StaticFileServerHandler extends SimpleChannelInboundHandler<Routed>
 	/** The path in which the static documents are */
 	private final File rootPath;
 
+	/** Whether the web service has https enabled */
 	private final boolean httpsEnabled;
 
 	/** The log for all error reporting */
