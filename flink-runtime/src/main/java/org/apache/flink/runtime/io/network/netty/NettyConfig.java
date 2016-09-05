@@ -70,12 +70,17 @@ public class NettyConfig {
 	/** The secret to decrypt the server key */
 	public static final String SSL_KEY_PASSWORD = "taskmanager.net.ssl.key.password";
 
-	/** The config parameter for the path to the Java truststore to verify the ssl certificate */
+	/** The path to the Java truststore to verify the ssl certificate */
 	public static final String SSL_TRUSTSTORE = "taskmanager.net.ssl.truststore";
 
-	/** The config parameter for the secret to decrypt the Java truststore */
+	/** The secret to decrypt the Java truststore */
 	public static final String SSL_TRUSTSTORE_PASSWORD = "taskmanager.net.ssl.truststore.password";
 
+	/** Flag to enable/disable remote hostname verification for the ssl connection */
+	public static final String SSL_VERIFY_HOSTNAME = "taskmanager.net.ssl.hostname.verify";
+
+	/** default value for hostname verification */
+	public static final boolean DEFAULT_SSL_VERIFY_HOSTNAME = true;
 
 	// ------------------------------------------------------------------------
 
@@ -260,6 +265,10 @@ public class NettyConfig {
 
 	public String getSSLTrustStorePassword() {
 		return config.getString(SSL_TRUSTSTORE_PASSWORD, null);
+	}
+
+	public boolean getSSLVerifyHostname() {
+		return config.getBoolean(SSL_VERIFY_HOSTNAME, DEFAULT_SSL_VERIFY_HOSTNAME);
 	}
 
 	@Override

@@ -116,6 +116,8 @@ class NettyClient {
 		if (config.getSSLEnabled()) {
 			try {
 				LOG.info("Configuring SSL for the Netty client");
+
+				// Load the CA truststore into the client SSL Context
 				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
 				trustStore.load(
 					new FileInputStream(new File(config.getSSLTrustStorePath())),
@@ -192,14 +194,20 @@ class NettyClient {
 		bootstrap.handler(new ChannelInitializer<SocketChannel>() {
 			@Override
 			public void initChannel(SocketChannel channel) throws Exception {
+
+				// SSL handler should be added first in the pipeline
 				if (clientSSLContext != null) {
 					SSLEngine sslEngine = clientSSLContext.createSSLEngine(
 						serverSocketAddress.getAddress().getHostAddress(),
 						serverSocketAddress.getPort());
 					sslEngine.setUseClientMode(true);
-					SSLParameters newSslParameters = sslEngine.getSSLParameters();
-					newSslParameters.setEndpointIdentificationAlgorithm("HTTPS");
-					sslEngine.setSSLParameters(newSslParameters);
+
+					// Check and enable hostname verification for the SSL connection
+					if (config.getSSLVerifyHostname()) {
+						SSLParameters newSslParameters = sslEngine.getSSLParameters();
+						newSslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+						sslEngine.setSSLParameters(newSslParameters);
+					}
 					channel.pipeline().addLast("ssl", new SslHandler(sslEngine));
 				}
 				channel.pipeline().addLast(protocol.getClientChannelHandlers());
