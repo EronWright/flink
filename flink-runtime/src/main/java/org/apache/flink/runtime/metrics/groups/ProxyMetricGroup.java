@@ -22,7 +22,10 @@ import org.apache.flink.metrics.CharacterFilter;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.Histogram;
+import org.apache.flink.metrics.Meter;
 import org.apache.flink.metrics.MetricGroup;
+
+import java.util.Map;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -80,6 +83,16 @@ public class ProxyMetricGroup<P extends MetricGroup> implements MetricGroup {
 	}
 
 	@Override
+	public <M extends Meter> M meter(String name, M meter) {
+		return parentMetricGroup.meter(name, meter);
+	}
+
+	@Override
+	public <M extends Meter> M meter(int name, M meter) {
+		return parentMetricGroup.meter(name, meter);
+	}
+
+	@Override
 	public final MetricGroup addGroup(int name) {
 		return parentMetricGroup.addGroup(name);
 	}
@@ -92,6 +105,11 @@ public class ProxyMetricGroup<P extends MetricGroup> implements MetricGroup {
 	@Override
 	public String[] getScopeComponents() {
 		return parentMetricGroup.getScopeComponents();
+	}
+
+	@Override
+	public Map<String, String> getAllVariables() {
+		return parentMetricGroup.getAllVariables();
 	}
 
 	@Override
