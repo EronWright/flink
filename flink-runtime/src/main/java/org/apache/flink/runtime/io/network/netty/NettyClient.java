@@ -119,9 +119,16 @@ class NettyClient {
 
 				// Load the CA truststore into the client SSL Context
 				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-				trustStore.load(
-					new FileInputStream(new File(config.getSSLTrustStorePath())),
-					config.getSSLTrustStorePassword().toCharArray());
+
+				FileInputStream trustStoreFile = null;
+				try {
+					trustStoreFile = new FileInputStream(new File(config.getSSLTrustStorePath()));
+					trustStore.load(trustStoreFile, config.getSSLTrustStorePassword().toCharArray());
+				} finally {
+					if (trustStoreFile != null) {
+						trustStoreFile.close();
+					}
+				}
 
 				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
 					TrustManagerFactory.getDefaultAlgorithm());
