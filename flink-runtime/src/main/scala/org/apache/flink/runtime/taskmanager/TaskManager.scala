@@ -965,7 +965,7 @@ class TaskManager(
     taskManagerMetricGroup = 
       new TaskManagerMetricGroup(metricsRegistry, this.runtimeInfo.getHostname, id.toString)
     
-    TaskManager.instantiateStatusMetrics(taskManagerMetricGroup)
+    TaskManager.instantiateStatusMetrics(taskManagerMetricGroup, network)
     
     // watch job manager to detect when it dies
     context.watch(jobManager)
@@ -2054,19 +2054,13 @@ object TaskManager {
     // initialize the memory segment factory accordingly
     memType match {
       case MemoryType.HEAP =>
-        if (!MemorySegmentFactory.isInitialized()) {
-          MemorySegmentFactory.initializeFactory(HeapMemorySegment.FACTORY)
-        }
-        else if (MemorySegmentFactory.getFactory() != HeapMemorySegment.FACTORY) {
+        if (!MemorySegmentFactory.initializeIfNotInitialized(HeapMemorySegment.FACTORY)) {
           throw new Exception("Memory type is set to heap memory, but memory segment " +
             "factory has been initialized for off-heap memory segments")
         }
 
       case MemoryType.OFF_HEAP =>
-        if (!MemorySegmentFactory.isInitialized()) {
-          MemorySegmentFactory.initializeFactory(HybridMemorySegment.FACTORY)
-        }
-        else if (MemorySegmentFactory.getFactory() != HybridMemorySegment.FACTORY) {
+        if (!MemorySegmentFactory.initializeIfNotInitialized(HybridMemorySegment.FACTORY)) {
           throw new Exception("Memory type is set to off-heap memory, but memory segment " +
             "factory has been initialized for heap memory segments")
         }
@@ -2365,9 +2359,16 @@ object TaskManager {
     metricRegistry
   }
 
-  private def instantiateStatusMetrics(taskManagerMetricGroup: MetricGroup) : Unit = {
-    val jvm = taskManagerMetricGroup
+  private def instantiateStatusMetrics(
+      taskManagerMetricGroup: MetricGroup,
+      network: NetworkEnvironment)
+    : Unit = {
+    val status = taskManagerMetricGroup
       .addGroup("Status")
+
+    instantiateNetworkMetrics(status.addGroup("Network"), network)
+
+    val jvm = status
       .addGroup("JVM")
 
     instantiateClassLoaderMetrics(jvm.addGroup("ClassLoader"))
@@ -2375,6 +2376,18 @@ object TaskManager {
     instantiateMemoryMetrics(jvm.addGroup("Memory"))
     instantiateThreadMetrics(jvm.addGroup("Threads"))
     instantiateCPUMetrics(jvm.addGroup("CPU"))
+  }
+
+  private def instantiateNetworkMetrics(
+        metrics: MetricGroup,
+        network: NetworkEnvironment)
+    : Unit = {
+    metrics.gauge[Long, FlinkGauge[Long]]("TotalMemorySegments", new FlinkGauge[Long] {
+      override def getValue: Long = network.getNetworkBufferPool.getTotalNumberOfMemorySegments
+    })
+    metrics.gauge[Long, FlinkGauge[Long]]("AvailableMemorySegments", new FlinkGauge[Long] {
+      override def getValue: Long = network.getNetworkBufferPool.getNumberOfAvailableMemorySegments
+    })
   }
 
   private def instantiateClassLoaderMetrics(metrics: MetricGroup) {

@@ -96,7 +96,7 @@ object CodeGenUtils {
 
   def primitiveDefaultValue(tpe: TypeInformation[_]): String = tpe match {
     case INT_TYPE_INFO => "-1"
-    case LONG_TYPE_INFO => "-1"
+    case LONG_TYPE_INFO => "-1L"
     case SHORT_TYPE_INFO => "-1"
     case BYTE_TYPE_INFO => "-1"
     case FLOAT_TYPE_INFO => "-1.0f"
@@ -142,6 +142,19 @@ object CodeGenUtils {
       case SqlTimeTypeInfo.TIMESTAMP =>
         s"${qualifyMethod(BuiltInMethod.TIMESTAMP_TO_LONG.method)}($resultTerm)"
     }
+
+  def compareEnum(term: String, enum: Enum[_]): Boolean = term == qualifyEnum(enum)
+
+  def getEnum(genExpr: GeneratedExpression): Enum[_] = {
+    val split = genExpr.resultTerm.split('.')
+    val value = split.last
+    val clazz = genExpr.resultType.getTypeClass
+    enumValueOf(clazz, value)
+  }
+
+  def enumValueOf[T <: Enum[T]](cls: Class[_], stringValue: String): Enum[_] =
+    Enum.valueOf(cls.asInstanceOf[Class[T]], stringValue).asInstanceOf[Enum[_]]
+
 
   // ----------------------------------------------------------------------------------------------
 
