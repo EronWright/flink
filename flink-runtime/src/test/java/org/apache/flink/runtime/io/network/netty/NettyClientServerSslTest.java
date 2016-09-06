@@ -23,8 +23,11 @@ import io.netty.channel.ChannelHandler;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.util.NetUtils;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.net.InetAddress;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -47,7 +50,13 @@ public class NettyClientServerSslTest {
 			public ChannelHandler[] getClientChannelHandlers() { return new ChannelHandler[0]; }
 		};
 
-		NettyConfig nettyConfig = NettyTestUtil.createConfig(createSslConfig());
+		NettyConfig nettyConfig = new NettyConfig(
+			InetAddress.getLoopbackAddress(),
+			NetUtils.getAvailablePort(),
+			NettyTestUtil.DEFAULT_SEGMENT_SIZE,
+			1,
+			createSslConfig());
+
 		NettyTestUtil.NettyServerAndClient serverAndClient = NettyTestUtil.initServerAndClient(protocol, nettyConfig);
 
 		Channel ch = NettyTestUtil.connect(serverAndClient);
@@ -79,9 +88,16 @@ public class NettyClientServerSslTest {
 		// Modify the keystore password to an incorrect one
 		config.setString(NettyConfig.SSL_KEYSTORE_PASSWORD, "invalidpassword");
 
+		NettyConfig nettyConfig = new NettyConfig(
+			InetAddress.getLoopbackAddress(),
+			NetUtils.getAvailablePort(),
+			NettyTestUtil.DEFAULT_SEGMENT_SIZE,
+			1,
+			config);
+
 		NettyTestUtil.NettyServerAndClient serverAndClient = null;
 		try {
-			serverAndClient = NettyTestUtil.initServerAndClient(protocol, NettyTestUtil.createConfig(config));
+			serverAndClient = NettyTestUtil.initServerAndClient(protocol, nettyConfig);
 			Assert.fail("Created server and client from invalid configuration");
 		} catch (Exception e) {
 			// Exception should be thrown as expected
@@ -111,7 +127,13 @@ public class NettyClientServerSslTest {
 		// Use a server certificate which is not present in the truststore
 		config.setString(NettyConfig.SSL_KEYSTORE, "src/test/resources/untrusted.keystore");
 
-		NettyConfig nettyConfig = NettyTestUtil.createConfig(config);
+		NettyConfig nettyConfig = new NettyConfig(
+			InetAddress.getLoopbackAddress(),
+			NetUtils.getAvailablePort(),
+			NettyTestUtil.DEFAULT_SEGMENT_SIZE,
+			1,
+			config);
+
 		NettyTestUtil.NettyServerAndClient serverAndClient = NettyTestUtil.initServerAndClient(protocol, nettyConfig);
 
 		Channel ch = NettyTestUtil.connect(serverAndClient);
@@ -132,7 +154,6 @@ public class NettyClientServerSslTest {
 		flinkConfig.setString(NettyConfig.SSL_KEY_PASSWORD, "password");
 		flinkConfig.setString(NettyConfig.SSL_TRUSTSTORE, "src/test/resources/local127.truststore");
 		flinkConfig.setString(NettyConfig.SSL_TRUSTSTORE_PASSWORD, "password");
-
 		return flinkConfig;
 	}
 }
