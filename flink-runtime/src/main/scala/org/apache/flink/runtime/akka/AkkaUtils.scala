@@ -637,7 +637,8 @@ object AkkaUtils {
     * @return the remote url's protocol field
     */
   def getAkkaProtocol(config: Configuration): String = {
-    val sslEnabled = config.getBoolean(ConfigConstants.AKKA_SSL_ENABLE, ConfigConstants.DEFAULT_AKKA_SSL_ENABLED)
+    val sslEnabled = config.getBoolean(ConfigConstants.AKKA_SSL_ENABLE,
+        ConfigConstants.DEFAULT_AKKA_SSL_ENABLED)
     if (sslEnabled) "akka.ssl.tcp" else "akka.tcp"
   }
 

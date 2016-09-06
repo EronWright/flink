@@ -215,6 +215,57 @@ public class WebRuntimeMonitor implements WebMonitor {
 
 		ExecutionContextExecutor context = ExecutionContext$.MODULE$.fromExecutor(executorService);
 
+		// Config to enable https access to the web-ui
+		boolean enableSSL = config.getBoolean(
+			ConfigConstants.JOB_MANAGER_WEB_SSL_FLAG,
+			ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_FLAG);
+
+		if (enableSSL) {
+			LOG.info("Enabling ssl for the web frontend");
+			try {
+				String keystoreFilePath = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE,
+					null);
+
+				String keystorePassword = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE_PASSWORD,
+					null);
+
+				String certPassword = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_KEY_PASSWORD,
+					null);
+
+				String sslVersion = config.getString(
+					ConfigConstants.JOB_MANAGER_WEB_SSL_VERSION,
+					ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_VERSION);
+
+				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+
+				FileInputStream keyStoreFile = null;
+				try {
+					keyStoreFile = new FileInputStream(new File(keystoreFilePath));
+					ks.load(keyStoreFile, keystorePassword.toCharArray());
+				} finally {
+					if (keyStoreFile != null) {
+						keyStoreFile.close();
+					}
+				}
+
+				// Set up key manager factory to use the server key store
+				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+				kmf.init(ks, certPassword.toCharArray());
+
+				// Initialize the SSLContext
+				serverSSLContext = SSLContext.getInstance(sslVersion);
+				serverSSLContext.init(kmf.getKeyManagers(), null, null);
+
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSLContext for the web frontend", e);
+			}
+		} else {
+			serverSSLContext = null;
+		}
+
 		router = new Router()
 			// config how to interact with this web server
 			.GET("/config", handler(new DashboardConfigHandler(cfg.getRefreshInterval())))
@@ -258,16 +309,20 @@ public class WebRuntimeMonitor implements WebMonitor {
 			.GET("/taskmanagers", handler(new TaskManagersHandler(DEFAULT_REQUEST_TIMEOUT)))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/metrics", handler(new TaskManagersHandler(DEFAULT_REQUEST_TIMEOUT)))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/log", 
-				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout, TaskManagerLogHandler.FileMode.LOG, config))
+				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout,
+					TaskManagerLogHandler.FileMode.LOG, config, enableSSL))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/stdout", 
-				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout, TaskManagerLogHandler.FileMode.STDOUT, config))
+				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout,
+					TaskManagerLogHandler.FileMode.STDOUT, config, enableSSL))
 
 			// log and stdout
 			.GET("/jobmanager/log", logFiles.logFile == null ? new ConstantTextHandler("(log file unavailable)") :
-				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.logFile))
+				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.logFile,
+					enableSSL))
 
 			.GET("/jobmanager/stdout", logFiles.stdOutFile == null ? new ConstantTextHandler("(stdout file unavailable)") :
-				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.stdOutFile))
+				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.stdOutFile,
+					enableSSL))
 
 			// Cancel a job via GET (for proper integration with YARN this has to be performed via GET)
 			.GET("/jobs/:jobid/yarn-cancel", handler(new JobCancellationHandler()))
@@ -306,7 +361,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 		}
 
 		// this handler serves all the static contents
-		router.GET("/:*", new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, webRootDir));
+		router.GET("/:*", new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, webRootDir,
+			enableSSL));
 
 		// add shutdown hook for deleting the directories and remaining temp files on shutdown
 		try {
@@ -322,49 +378,6 @@ public class WebRuntimeMonitor implements WebMonitor {
 		} catch (Throwable t) {
 			// these errors usually happen when the shutdown is already in progress
 			LOG.warn("Error while adding shutdown hook", t);
-		}
-
-		// Config to enable https access to the web-ui
-		boolean enableSSL = config.getBoolean(
-			ConfigConstants.JOB_MANAGER_WEB_SSL_FLAG,
-			ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_FLAG);
-
-		if (enableSSL) {
-			LOG.info("Enabling ssl for the web frontend");
-			try {
-				String keystoreFilePath = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE,
-					null);
-
-				String keystorePassword = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE_PASSWORD,
-					null);
-
-				String certPassword = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEY_PASSWORD,
-					null);
-
-				String sslVersion = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_VERSION,
-					ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_VERSION);
-
-				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-				ks.load(new FileInputStream(new File(keystoreFilePath)),
-					keystorePassword.toCharArray());
-
-				// Set up key manager factory to use the server key store
-				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-				kmf.init(ks, certPassword.toCharArray());
-
-				// Initialize the SSLContext
-				serverSSLContext = SSLContext.getInstance(sslVersion);
-				serverSSLContext.init(kmf.getKeyManagers(), null, null);
-
-			} catch (Exception e) {
-				throw new IOException("Failed to initialize SSLContext for the web frontend", e);
-			}
-		} else {
-			serverSSLContext = null;
 		}
 
 		ChannelInitializer<SocketChannel> initializer = new ChannelInitializer<SocketChannel>() {
@@ -500,7 +513,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 	//  Utilities
 	// ------------------------------------------------------------------------
 	private RuntimeMonitorHandler handler(RequestHandler handler) {
-		return new RuntimeMonitorHandler(handler, retriever, jobManagerAddressPromise.future(), timeout);
+		return new RuntimeMonitorHandler(handler, retriever, jobManagerAddressPromise.future(), timeout,
+			serverSSLContext !=  null);
 	}
 
 	File getBaseDir(Configuration configuration) {
