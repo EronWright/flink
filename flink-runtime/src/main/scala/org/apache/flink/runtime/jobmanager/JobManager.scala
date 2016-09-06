@@ -2883,7 +2883,7 @@ object JobManager {
     : ActorRef = {
 
     val timeout = AkkaUtils.getLookupTimeout(config)
-    val (protocol, _, _) = TaskManager.getAndCheckJobManagerAddress(config)
+    val protocol = AkkaUtils.getAkkaProtocol(config)
     getJobManagerActorRef(protocol, address, system, timeout)
   }
 }
