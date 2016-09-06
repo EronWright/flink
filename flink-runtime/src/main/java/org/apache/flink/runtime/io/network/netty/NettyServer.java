@@ -126,8 +126,16 @@ class NettyServer {
 				LOG.info("Configuring SSL for the Netty Server");
 
 				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-				ks.load(new FileInputStream(new File(config.getSSLKeyStorePath())),
-					config.getSSLKeyStorePassword().toCharArray());
+
+				FileInputStream keyStoreFile = null;
+				try {
+					keyStoreFile = new FileInputStream(new File(config.getSSLKeyStorePath()));
+					ks.load(keyStoreFile, config.getSSLKeyStorePassword().toCharArray());
+				} finally {
+					if (keyStoreFile != null) {
+						keyStoreFile.close();
+					}
+				}
 
 				// Set up key manager factory to use the server key store
 				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
