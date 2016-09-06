@@ -22,6 +22,7 @@ import java.sql.{Date, Time, Timestamp}
 import org.apache.calcite.avatica.util.DateTimeUtils._
 import org.apache.flink.api.common.typeinfo.{SqlTimeTypeInfo, TypeInformation}
 import org.apache.flink.api.table.expressions.ExpressionUtils.{toMilliInterval, toMonthInterval}
+import org.apache.flink.api.table.expressions.TimeIntervalUnit.TimeIntervalUnit
 import org.apache.flink.api.table.expressions._
 
 import scala.language.implicitConversions
@@ -136,6 +137,8 @@ trait ImplicitExpressionOperations {
     */
   def ceil() = Ceil(expr)
 
+  // String operations
+
   /**
     * Creates a substring of the given string at given index for a given length.
     *
@@ -168,11 +171,11 @@ trait ImplicitExpressionOperations {
       removeTrailing: Boolean = true,
       character: Expression = TrimConstants.TRIM_DEFAULT_CHAR) = {
     if (removeLeading && removeTrailing) {
-      Trim(TrimConstants.TRIM_BOTH, character, expr)
+      Trim(TrimMode.BOTH, character, expr)
     } else if (removeLeading) {
-      Trim(TrimConstants.TRIM_LEADING, character, expr)
+      Trim(TrimMode.LEADING, character, expr)
     } else if (removeTrailing) {
-      Trim(TrimConstants.TRIM_TRAILING, character, expr)
+      Trim(TrimMode.TRAILING, character, expr)
     } else {
       expr
     }
@@ -215,6 +218,8 @@ trait ImplicitExpressionOperations {
     */
   def similar(pattern: Expression) = Similar(expr, pattern)
 
+  // Temporal operations
+
   /**
     * Parses a date String in the form "yy-mm-dd" to a SQL Date.
     */
@@ -230,7 +235,28 @@ trait ImplicitExpressionOperations {
     */
   def toTimestamp = Cast(expr, SqlTimeTypeInfo.TIMESTAMP)
 
-  // interval types
+  /**
+    * Extracts parts of a time point or time interval. Returns the part as a long value.
+    *
+    * e.g. "2006-06-05".toDate.extract(DAY) leads to 5
+    */
+  def extract(timeIntervalUnit: TimeIntervalUnit) = Extract(timeIntervalUnit, expr)
+
+  /**
+    * Rounds down a time point to the given unit.
+    *
+    * e.g. "12:44:31".toDate.floor(MINUTE) leads to 12:44:00
+    */
+  def floor(timeIntervalUnit: TimeIntervalUnit) = TemporalFloor(timeIntervalUnit, expr)
+
+  /**
+    * Rounds up a time point to the given unit.
+    *
+    * e.g. "12:44:31".toDate.ceil(MINUTE) leads to 12:45:00
+    */
+  def ceil(timeIntervalUnit: TimeIntervalUnit) = TemporalCeil(timeIntervalUnit, expr)
+
+  // Interval types
 
   /**
     * Creates an interval of the given number of years.
@@ -291,7 +317,7 @@ trait ImplicitExpressionConversions {
     def expr = e
   }
 
-  implicit class SymbolExpression(s: Symbol) extends ImplicitExpressionOperations {
+  implicit class UnresolvedFieldExpression(s: Symbol) extends ImplicitExpressionOperations {
     def expr = UnresolvedFieldReference(s.name)
   }
 

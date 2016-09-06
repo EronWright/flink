@@ -60,7 +60,8 @@ class AkkaSslITCase(_system: ActorSystem)
       config.setString(ConfigConstants.AKKA_SSL_KEYSTORE, "src/test/resources/local127.keystore")
       config.setString(ConfigConstants.AKKA_SSL_KEYSTORE_PASSWORD, "password")
       config.setString(ConfigConstants.AKKA_SSL_KEY_PASSWORD, "password")
-      config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE, "src/test/resources/local127.truststore")
+      config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE,
+          "src/test/resources/local127.truststore")
       config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE_PASSWORD, "password")
 
       val cluster = new TestingCluster(config, false)

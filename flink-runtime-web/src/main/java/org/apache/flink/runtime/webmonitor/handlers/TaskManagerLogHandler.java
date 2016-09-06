@@ -117,8 +117,9 @@ public class TaskManagerLogHandler extends RuntimeMonitorHandlerBase {
 		Future<String> localJobManagerAddressPromise,
 		FiniteDuration timeout,
 		FileMode fileMode,
-		Configuration config) throws IOException {
-		super(retriever, localJobManagerAddressPromise, timeout);
+		Configuration config,
+		boolean httpsEnabled) throws IOException {
+		super(retriever, localJobManagerAddressPromise, timeout, httpsEnabled);
 
 		this.executor = checkNotNull(executor);
 		this.config = config;
@@ -229,30 +230,27 @@ public class TaskManagerLogHandler extends RuntimeMonitorHandlerBase {
 
 						// write the content.
 						ChannelFuture lastContentFuture;
+						final GenericFutureListener<io.netty.util.concurrent.Future<? super Void>> completionListener =
+							new GenericFutureListener<io.netty.util.concurrent.Future<? super Void>>() {
+								@Override
+								public void operationComplete(
+									io.netty.util.concurrent.Future<? super Void> future) throws Exception {
+										lastRequestPending.remove(taskManagerID);
+										fc.close();
+										raf.close();
+								}
+							};
 						if (ctx.pipeline().get(SslHandler.class) == null) {
 							ctx.write(
 								new DefaultFileRegion(fc, 0, fileLength), ctx.newProgressivePromise())
-									.addListener(new GenericFutureListener<io.netty.util.concurrent.Future<? super Void>>() {
-										@Override
-										public void operationComplete(io.netty.util.concurrent.Future<? super Void> future) throws Exception {
-											lastRequestPending.remove(taskManagerID);
-											fc.close();
-											raf.close();
-										}
-									});
+									.addListener(completionListener);
 							lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
 
 						} else {
-							lastContentFuture = ctx.writeAndFlush(new HttpChunkedInput(new ChunkedFile(raf, 0, fileLength, 8192)),
+							lastContentFuture = ctx.writeAndFlush(
+								new HttpChunkedInput(new ChunkedFile(raf, 0, fileLength, 8192)),
 								ctx.newProgressivePromise())
-									.addListener(new GenericFutureListener<io.netty.util.concurrent.Future<? super Void>>() {
-										@Override
-										public void operationComplete(io.netty.util.concurrent.Future<? super Void> future) throws Exception {
-											lastRequestPending.remove(taskManagerID);
-											fc.close();
-											raf.close();
-										}
-									});
+									.addListener(completionListener);
 							// HttpChunkedInput will write the end marker (LastHttpContent) for us.
 						}
 
