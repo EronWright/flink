@@ -109,7 +109,7 @@ public class NettyClientServerSslTest {
 		Configuration config = createSslConfig();
 
 		// Use a server certificate which is not present in the truststore
-		config.setString(NettyConfig.SSL_KEYSTORE, "src/test/resources/localhost.keystore");
+		config.setString(NettyConfig.SSL_KEYSTORE, "src/test/resources/untrusted.keystore");
 
 		NettyConfig nettyConfig = NettyTestUtil.createConfig(config);
 		NettyTestUtil.NettyServerAndClient serverAndClient = NettyTestUtil.initServerAndClient(protocol, nettyConfig);
