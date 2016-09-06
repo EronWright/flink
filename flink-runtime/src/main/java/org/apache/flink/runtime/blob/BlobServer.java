@@ -168,8 +168,15 @@ public class BlobServer extends Thread implements BlobService {
 					ConfigConstants.DEFAULT_BLOB_SERVER_SSL_VERSION);
 
 				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-				ks.load(new FileInputStream(new File(keystoreFilePath)),
-					keystorePassword.toCharArray());
+				FileInputStream keyStoreFile = null;
+				try {
+					keyStoreFile = new FileInputStream(new File(keystoreFilePath));
+					ks.load(keyStoreFile, keystorePassword.toCharArray());
+				} finally {
+					if (keyStoreFile != null) {
+						keyStoreFile.close();
+					}
+				}
 
 				// Set up key manager factory to use the server key store
 				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());

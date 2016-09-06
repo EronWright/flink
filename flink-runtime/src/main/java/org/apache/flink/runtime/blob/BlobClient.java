@@ -108,8 +108,16 @@ public final class BlobClient implements Closeable {
 						ConfigConstants.DEFAULT_BLOB_CLIENT_SSL_VERSION);
 
 				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-				trustStore.load(
-						new FileInputStream(new File(trustStoreFilePath)), trustStorePassword.toCharArray());
+
+				FileInputStream trustStoreFile = null;
+				try {
+					trustStoreFile = new FileInputStream(new File(trustStoreFilePath));
+					trustStore.load(trustStoreFile, trustStorePassword.toCharArray());
+				} finally {
+					if (trustStoreFile != null) {
+						trustStoreFile.close();
+					}
+				}
 
 				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
 						TrustManagerFactory.getDefaultAlgorithm());
