@@ -19,9 +19,11 @@
 package org.apache.flink.runtime.io.network.netty;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.net.SSLUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLContext;
 import java.net.InetAddress;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -47,40 +49,11 @@ public class NettyConfig {
 
 	public static final String TRANSPORT_TYPE = "taskmanager.net.transport";
 
-	/**
-	 * Config parameter to enable SSL on the Netty transport
-	 */
-	public static final String SSL_ENABLED = "taskmanager.net.ssl.enable";
+	/** SSL flag to override global ssl support */
+	public static final String SSL_ENABLED = "taskmanager.net.ssl.enabled";
 
-	/** The default value to enable ssl */
-	public static final boolean DEFAULT_SSL_ENABLED = false;
-
-	/** The SSL protocol version to be supported by the SSL connection */
-	public static final String SSL_VERSION = "taskmanager.net.ssl.version";
-
-	/** The default value for the ssl protocol */
-	public static final String DEFAULT_SSL_VERSION = "TLS";
-
-	/** The Java keystore file location which contains the certificate and key for the SSL connection */
-	public static final String SSL_KEYSTORE = "taskmanager.net.ssl.keystore";
-
-	/** The secret to decrypt the keystore file */
-	public static final String SSL_KEYSTORE_PASSWORD = "taskmanager.net.ssl.keystore.password";
-
-	/** The secret to decrypt the server key */
-	public static final String SSL_KEY_PASSWORD = "taskmanager.net.ssl.key.password";
-
-	/** The path to the Java truststore to verify the ssl certificate */
-	public static final String SSL_TRUSTSTORE = "taskmanager.net.ssl.truststore";
-
-	/** The secret to decrypt the Java truststore */
-	public static final String SSL_TRUSTSTORE_PASSWORD = "taskmanager.net.ssl.truststore.password";
-
-	/** Flag to enable/disable remote hostname verification for the ssl connection */
-	public static final String SSL_VERIFY_HOSTNAME = "taskmanager.net.ssl.hostname.verify";
-
-	/** default value for hostname verification */
-	public static final boolean DEFAULT_SSL_VERIFY_HOSTNAME = true;
+	/** The default value to override ssl support for Netty transport */
+	public static final boolean DEFAULT_SSL_ENABLED = true;
 
 	// ------------------------------------------------------------------------
 
@@ -239,36 +212,35 @@ public class NettyConfig {
 		}
 	}
 
+	public SSLContext createClientSSLContext() throws Exception {
+
+		// Create SSL Context from config
+		SSLContext clientSSLContext = null;
+		if (getSSLEnabled()) {
+			clientSSLContext = SSLUtils.createSSLClientContext(config);
+		}
+
+		return clientSSLContext;
+	}
+
+	public SSLContext createServerSSLContext() throws Exception {
+
+		// Create SSL Context from config
+		SSLContext serverSSLContext = null;
+		if (getSSLEnabled()) {
+			serverSSLContext = SSLUtils.createSSLServerContext(config);
+		}
+
+		return serverSSLContext;
+	}
+
 	public boolean getSSLEnabled() {
-		return config.getBoolean(SSL_ENABLED, DEFAULT_SSL_ENABLED);
-	}
-
-	public String getSSLVersion() {
-		return config.getString(SSL_VERSION, DEFAULT_SSL_VERSION);
-	}
-
-	public String getSSLKeyStorePath() {
-		return config.getString(SSL_KEYSTORE, null);
-	}
-
-	public String getSSLKeyStorePassword() {
-		return config.getString(SSL_KEYSTORE_PASSWORD, null);
-	}
-
-	public String getSSLKeyPassword() {
-		return config.getString(SSL_KEY_PASSWORD, null);
-	}
-
-	public String getSSLTrustStorePath() {
-		return config.getString(SSL_TRUSTSTORE, null);
-	}
-
-	public String getSSLTrustStorePassword() {
-		return config.getString(SSL_TRUSTSTORE_PASSWORD, null);
+		return config.getBoolean(SSL_ENABLED, DEFAULT_SSL_ENABLED)
+			&& SSLUtils.getSSLEnabled(config);
 	}
 
 	public boolean getSSLVerifyHostname() {
-		return config.getBoolean(SSL_VERIFY_HOSTNAME, DEFAULT_SSL_VERIFY_HOSTNAME);
+		return SSLUtils.getSSLVerifyHostname(config);
 	}
 
 	@Override

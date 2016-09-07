@@ -35,6 +35,7 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.core.fs.Path;
+import org.codehaus.jackson.map.DeserializerFactory;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -59,10 +60,10 @@ public class BlobClientSslTest {
 	public static void startServer() {
 		try {
 			Configuration config = new Configuration();
-			config.setBoolean(ConfigConstants.BLOB_SERVER_SSL_ENABLED, true);
-			config.setString(ConfigConstants.BLOB_SERVER_SSL_KEYSTORE, "src/test/resources/local127.keystore");
-			config.setString(ConfigConstants.BLOB_SERVER_SSL_KEYSTORE_PASSWORD, "password");
-			config.setString(ConfigConstants.BLOB_SERVER_SSL_KEY_PASSWORD, "password");
+			config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true);
+			config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "src/test/resources/local127.keystore");
+			config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "password");
+			config.setString(ConfigConstants.SECURITY_SSL_KEY_PASSWORD, "password");
 			BLOB_SERVER = new BlobServer(config);
 		}
 		catch (IOException e) {
@@ -71,9 +72,9 @@ public class BlobClientSslTest {
 		}
 
 		clientConfig = new Configuration();
-		clientConfig.setBoolean(ConfigConstants.BLOB_CLIENT_SSL_ENABLED, true);
-		clientConfig.setString(ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE, "src/test/resources/local127.truststore");
-		clientConfig.setString(ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE_PASSWORD, "password");
+		clientConfig.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true);
+		clientConfig.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE, "src/test/resources/local127.truststore");
+		clientConfig.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE_PASSWORD, "password");
 
 	}
 

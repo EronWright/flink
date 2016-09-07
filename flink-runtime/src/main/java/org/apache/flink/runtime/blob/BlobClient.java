@@ -26,6 +26,7 @@ import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.instance.ActorGateway;
 import org.apache.flink.runtime.messages.JobManagerMessages;
+import org.apache.flink.runtime.net.SSLUtils;
 import org.apache.flink.util.InstantiationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,18 +36,14 @@ import scala.concurrent.Future;
 import scala.concurrent.duration.FiniteDuration;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
 import java.io.Closeable;
 import java.io.EOFException;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -91,42 +88,19 @@ public final class BlobClient implements Closeable {
 
 		try {
 			// Check if ssl is enabled
+			SSLContext clientSSLContext = null;
 			if (clientConfig != null &&
-				clientConfig.getBoolean(ConfigConstants.BLOB_CLIENT_SSL_ENABLED,
-						ConfigConstants.DEFAULT_BLOB_CLIENT_SSL_ENABLED)) {
+				clientConfig.getBoolean(ConfigConstants.BLOB_SERVICE_SSL_ENABLED,
+						ConfigConstants.DEFAULT_BLOB_SERVICE_SSL_ENABLED)) {
+
+				clientSSLContext = SSLUtils.createSSLClientContext(clientConfig);
+			}
+
+			if (clientSSLContext != null) {
 
 				LOG.info("Using ssl connection to the blob server");
 
-				String trustStoreFilePath = clientConfig.getString(
-						ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE,
-						null);
-				String trustStorePassword = clientConfig.getString(
-						ConfigConstants.BLOB_CLIENT_SSL_TRUSTSTORE_PASSWORD,
-						null);
-				String sslVersion = clientConfig.getString(
-						ConfigConstants.BLOB_CLIENT_SSL_VERSION,
-						ConfigConstants.DEFAULT_BLOB_CLIENT_SSL_VERSION);
-
-				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-
-				FileInputStream trustStoreFile = null;
-				try {
-					trustStoreFile = new FileInputStream(new File(trustStoreFilePath));
-					trustStore.load(trustStoreFile, trustStorePassword.toCharArray());
-				} finally {
-					if (trustStoreFile != null) {
-						trustStoreFile.close();
-					}
-				}
-
-				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
-						TrustManagerFactory.getDefaultAlgorithm());
-				trustManagerFactory.init(trustStore);
-
-				SSLContext sslContext =  SSLContext.getInstance(sslVersion);
-				sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
-
-				this.socket = sslContext.getSocketFactory().createSocket(
+				this.socket = clientSSLContext.getSocketFactory().createSocket(
 						serverAddress.getAddress(),
 						serverAddress.getPort());
 			} else {

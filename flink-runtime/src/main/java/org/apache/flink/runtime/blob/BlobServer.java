@@ -24,20 +24,18 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.IllegalConfigurationException;
 import org.apache.flink.runtime.jobmanager.HighAvailabilityMode;
+import org.apache.flink.runtime.net.SSLUtils;
 import org.apache.flink.util.NetUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URL;
-import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -65,7 +63,7 @@ public class BlobServer extends Thread implements BlobService {
 	private final ServerSocket serverSocket;
 
 	/** The SSL server context if ssl is enabled for the connections */
-	private final SSLContext serverSSLContext;
+	private SSLContext serverSSLContext = null;
 
 	/** Blob Server configuration */
 	private final Configuration blobServiceConfiguration;
@@ -145,52 +143,13 @@ public class BlobServer extends Thread implements BlobService {
 			this.shutdownHook = null;
 		}
 
-		boolean enableSSL = config.getBoolean(
-				ConfigConstants.BLOB_SERVER_SSL_ENABLED,
-				ConfigConstants.DEFAULT_BLOB_SERVER_SSL_ENABLED);
-		if (enableSSL) {
-			LOG.info("Enabling ssl for the blob server");
+		if (config.getBoolean(ConfigConstants.BLOB_SERVICE_SSL_ENABLED,
+				ConfigConstants.DEFAULT_BLOB_SERVICE_SSL_ENABLED)) {
 			try {
-				String keystoreFilePath = config.getString(
-					ConfigConstants.BLOB_SERVER_SSL_KEYSTORE,
-					null);
-
-				String keystorePassword = config.getString(
-					ConfigConstants.BLOB_SERVER_SSL_KEYSTORE_PASSWORD,
-					null);
-
-				String certPassword = config.getString(
-					ConfigConstants.BLOB_SERVER_SSL_KEY_PASSWORD,
-					null);
-
-				String sslVersion = config.getString(
-					ConfigConstants.BLOB_SERVER_SSL_VERSION,
-					ConfigConstants.DEFAULT_BLOB_SERVER_SSL_VERSION);
-
-				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-				FileInputStream keyStoreFile = null;
-				try {
-					keyStoreFile = new FileInputStream(new File(keystoreFilePath));
-					ks.load(keyStoreFile, keystorePassword.toCharArray());
-				} finally {
-					if (keyStoreFile != null) {
-						keyStoreFile.close();
-					}
-				}
-
-				// Set up key manager factory to use the server key store
-				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-				kmf.init(ks, certPassword.toCharArray());
-
-				// Initialize the SSLContext
-				serverSSLContext = SSLContext.getInstance(sslVersion);
-				serverSSLContext.init(kmf.getKeyManagers(), null, null);
-
+				serverSSLContext = SSLUtils.createSSLServerContext(config);
 			} catch (Exception e) {
 				throw new IOException("Failed to initialize SSLContext for the blob server", e);
 			}
-		} else {
-			serverSSLContext = null;
 		}
 
 		//  ----------------------- start the server -------------------
@@ -206,6 +165,7 @@ public class BlobServer extends Thread implements BlobService {
 				if (serverSSLContext == null) {
 					return new ServerSocket(port, finalBacklog);
 				} else {
+					LOG.info("Enabling ssl for the blob server");
 					return serverSSLContext.getServerSocketFactory().createServerSocket(port, finalBacklog);
 				}
 			}

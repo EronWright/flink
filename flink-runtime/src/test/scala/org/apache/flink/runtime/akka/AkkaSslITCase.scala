@@ -18,8 +18,6 @@
 
 package org.apache.flink.runtime.akka
 
-import java.util.concurrent.TimeoutException
-
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
 import org.apache.flink.configuration.{ConfigConstants, Configuration}
@@ -56,13 +54,13 @@ class AkkaSslITCase(_system: ActorSystem)
       config.setInteger(ConfigConstants.TASK_MANAGER_NUM_TASK_SLOTS, 1)
       config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
 
-      config.setBoolean(ConfigConstants.AKKA_SSL_ENABLE, true)
-      config.setString(ConfigConstants.AKKA_SSL_KEYSTORE, "src/test/resources/local127.keystore")
-      config.setString(ConfigConstants.AKKA_SSL_KEYSTORE_PASSWORD, "password")
-      config.setString(ConfigConstants.AKKA_SSL_KEY_PASSWORD, "password")
-      config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE,
+      config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true)
+      config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "src/test/resources/local127.keystore")
+      config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "password")
+      config.setString(ConfigConstants.SECURITY_SSL_KEY_PASSWORD, "password")
+      config.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE,
           "src/test/resources/local127.truststore")
-      config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE_PASSWORD, "password")
+      config.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE_PASSWORD, "password")
 
       val cluster = new TestingCluster(config, false)
 
@@ -76,7 +74,7 @@ class AkkaSslITCase(_system: ActorSystem)
       val config = new Configuration()
       config.setInteger(ConfigConstants.TASK_MANAGER_NUM_TASK_SLOTS, 1)
       config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
-      config.setBoolean(ConfigConstants.AKKA_SSL_ENABLE, false)
+      config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, false)
 
       val cluster = new TestingCluster(config, false)
 
@@ -87,19 +85,19 @@ class AkkaSslITCase(_system: ActorSystem)
 
     "fail to start with invalid ssl keystore configured" in {
 
-      an[TimeoutException] should be thrownBy {
+      an[Exception] should be thrownBy {
 
         val config = new Configuration()
         config.setInteger(ConfigConstants.TASK_MANAGER_NUM_TASK_SLOTS, 1)
         config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
         config.setString(ConfigConstants.AKKA_ASK_TIMEOUT, "2 s")
 
-        config.setBoolean(ConfigConstants.AKKA_SSL_ENABLE, true)
-        config.setString(ConfigConstants.AKKA_SSL_KEYSTORE, "invalid.keystore")
-        config.setString(ConfigConstants.AKKA_SSL_KEYSTORE_PASSWORD, "password")
-        config.setString(ConfigConstants.AKKA_SSL_KEY_PASSWORD, "password")
-        config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE, "invalid.keystore")
-        config.setString(ConfigConstants.AKKA_SSL_TRUSTSTORE_PASSWORD, "password")
+        config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true)
+        config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "invalid.keystore")
+        config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "password")
+        config.setString(ConfigConstants.SECURITY_SSL_KEY_PASSWORD, "password")
+        config.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE, "invalid.keystore")
+        config.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE_PASSWORD, "password")
 
         val cluster = new TestingCluster(config, false)
 
@@ -109,14 +107,14 @@ class AkkaSslITCase(_system: ActorSystem)
 
     "fail to start with missing mandatory ssl configuration" in {
 
-      an[TimeoutException] should be thrownBy {
+      an[Exception] should be thrownBy {
 
         val config = new Configuration()
         config.setInteger(ConfigConstants.TASK_MANAGER_NUM_TASK_SLOTS, 1)
         config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
         config.setString(ConfigConstants.AKKA_ASK_TIMEOUT, "2 s")
 
-        config.setBoolean(ConfigConstants.AKKA_SSL_ENABLE, true)
+        config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true)
 
         val cluster = new TestingCluster(config, false)
 

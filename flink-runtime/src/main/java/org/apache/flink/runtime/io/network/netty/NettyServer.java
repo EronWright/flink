@@ -33,13 +33,9 @@ import io.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.security.KeyStore;
 import java.util.concurrent.ThreadFactory;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -57,7 +53,7 @@ class NettyServer {
 
 	private ChannelFuture bindFuture;
 
-	private SSLContext serverSSLContext;
+	private SSLContext serverSSLContext = null;
 
 	NettyServer(NettyConfig config) {
 		this.config = checkNotNull(config);
@@ -121,36 +117,11 @@ class NettyServer {
 		bootstrap.childOption(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 2 * config.getMemorySegmentSize());
 
 		// SSL related configuration
-		if (config.getSSLEnabled()) {
-			try {
-				LOG.info("Configuring SSL for the Netty Server");
-
-				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-
-				FileInputStream keyStoreFile = null;
-				try {
-					keyStoreFile = new FileInputStream(new File(config.getSSLKeyStorePath()));
-					ks.load(keyStoreFile, config.getSSLKeyStorePassword().toCharArray());
-				} finally {
-					if (keyStoreFile != null) {
-						keyStoreFile.close();
-					}
-				}
-
-				// Set up key manager factory to use the server key store
-				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-				kmf.init(ks, config.getSSLKeyPassword().toCharArray());
-
-				// Initialize the SSLContext
-				serverSSLContext = SSLContext.getInstance(config.getSSLVersion());
-				serverSSLContext.init(kmf.getKeyManagers(), null, null);
-			} catch (Exception e) {
-				throw new IOException("Failed to initialize SSL Context for the Netty Server", e);
-			}
-		} else {
-			serverSSLContext = null;
+		try {
+			serverSSLContext = config.createServerSSLContext();
+		} catch (Exception e) {
+			throw new IOException("Failed to initialize SSL Context for the Netty Server", e);
 		}
-
 
 		// --------------------------------------------------------------------
 		// Child channel pipeline for accepted connections

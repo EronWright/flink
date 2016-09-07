@@ -22,6 +22,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.NetUtils;
 import org.junit.Assert;
@@ -86,7 +87,7 @@ public class NettyClientServerSslTest {
 
 		Configuration config = createSslConfig();
 		// Modify the keystore password to an incorrect one
-		config.setString(NettyConfig.SSL_KEYSTORE_PASSWORD, "invalidpassword");
+		config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "invalidpassword");
 
 		NettyConfig nettyConfig = new NettyConfig(
 			InetAddress.getLoopbackAddress(),
@@ -125,7 +126,7 @@ public class NettyClientServerSslTest {
 		Configuration config = createSslConfig();
 
 		// Use a server certificate which is not present in the truststore
-		config.setString(NettyConfig.SSL_KEYSTORE, "src/test/resources/untrusted.keystore");
+		config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "src/test/resources/untrusted.keystore");
 
 		NettyConfig nettyConfig = new NettyConfig(
 			InetAddress.getLoopbackAddress(),
@@ -148,12 +149,12 @@ public class NettyClientServerSslTest {
 	private Configuration createSslConfig() throws Exception {
 
 		Configuration flinkConfig = new Configuration();
-		flinkConfig.setBoolean(NettyConfig.SSL_ENABLED, true);
-		flinkConfig.setString(NettyConfig.SSL_KEYSTORE, "src/test/resources/local127.keystore");
-		flinkConfig.setString(NettyConfig.SSL_KEYSTORE_PASSWORD, "password");
-		flinkConfig.setString(NettyConfig.SSL_KEY_PASSWORD, "password");
-		flinkConfig.setString(NettyConfig.SSL_TRUSTSTORE, "src/test/resources/local127.truststore");
-		flinkConfig.setString(NettyConfig.SSL_TRUSTSTORE_PASSWORD, "password");
+		flinkConfig.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true);
+		flinkConfig.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "src/test/resources/local127.keystore");
+		flinkConfig.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "password");
+		flinkConfig.setString(ConfigConstants.SECURITY_SSL_KEY_PASSWORD, "password");
+		flinkConfig.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE, "src/test/resources/local127.truststore");
+		flinkConfig.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE_PASSWORD, "password");
 		return flinkConfig;
 	}
 }

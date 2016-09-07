@@ -35,6 +35,7 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.akka.AkkaUtils;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
+import org.apache.flink.runtime.net.SSLUtils;
 import org.apache.flink.runtime.webmonitor.files.StaticFileServerHandler;
 import org.apache.flink.runtime.webmonitor.handlers.ClusterOverviewHandler;
 import org.apache.flink.runtime.webmonitor.handlers.ConstantTextHandler;
@@ -76,14 +77,11 @@ import scala.concurrent.ExecutionContextExecutor;
 import scala.concurrent.Promise;
 import scala.concurrent.duration.FiniteDuration;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.security.KeyStore;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
@@ -217,48 +215,14 @@ public class WebRuntimeMonitor implements WebMonitor {
 
 		// Config to enable https access to the web-ui
 		boolean enableSSL = config.getBoolean(
-			ConfigConstants.JOB_MANAGER_WEB_SSL_FLAG,
-			ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_FLAG);
+				ConfigConstants.JOB_MANAGER_WEB_SSL_ENABLED,
+				ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_ENABLED) &&
+			SSLUtils.getSSLEnabled(config);
 
 		if (enableSSL) {
 			LOG.info("Enabling ssl for the web frontend");
 			try {
-				String keystoreFilePath = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE,
-					null);
-
-				String keystorePassword = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEYSTORE_PASSWORD,
-					null);
-
-				String certPassword = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_KEY_PASSWORD,
-					null);
-
-				String sslVersion = config.getString(
-					ConfigConstants.JOB_MANAGER_WEB_SSL_VERSION,
-					ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_VERSION);
-
-				KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-
-				FileInputStream keyStoreFile = null;
-				try {
-					keyStoreFile = new FileInputStream(new File(keystoreFilePath));
-					ks.load(keyStoreFile, keystorePassword.toCharArray());
-				} finally {
-					if (keyStoreFile != null) {
-						keyStoreFile.close();
-					}
-				}
-
-				// Set up key manager factory to use the server key store
-				KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-				kmf.init(ks, certPassword.toCharArray());
-
-				// Initialize the SSLContext
-				serverSSLContext = SSLContext.getInstance(sslVersion);
-				serverSSLContext.init(kmf.getKeyManagers(), null, null);
-
+				serverSSLContext = SSLUtils.createSSLServerContext(config);
 			} catch (Exception e) {
 				throw new IOException("Failed to initialize SSLContext for the web frontend", e);
 			}

@@ -35,12 +35,8 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
-import javax.net.ssl.TrustManagerFactory;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.security.KeyStore;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
@@ -54,7 +50,7 @@ class NettyClient {
 
 	private Bootstrap bootstrap;
 
-	private SSLContext clientSSLContext;
+	private SSLContext clientSSLContext = null;
 
 	NettyClient(NettyConfig config) {
 		this.config = config;
@@ -113,34 +109,10 @@ class NettyClient {
 			bootstrap.option(ChannelOption.SO_RCVBUF, receiveAndSendBufferSize);
 		}
 
-		if (config.getSSLEnabled()) {
-			try {
-				LOG.info("Configuring SSL for the Netty client");
-
-				// Load the CA truststore into the client SSL Context
-				KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-
-				FileInputStream trustStoreFile = null;
-				try {
-					trustStoreFile = new FileInputStream(new File(config.getSSLTrustStorePath()));
-					trustStore.load(trustStoreFile, config.getSSLTrustStorePassword().toCharArray());
-				} finally {
-					if (trustStoreFile != null) {
-						trustStoreFile.close();
-					}
-				}
-
-				TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
-					TrustManagerFactory.getDefaultAlgorithm());
-				trustManagerFactory.init(trustStore);
-
-				clientSSLContext = SSLContext.getInstance(config.getSSLVersion());
-				clientSSLContext.init(null, trustManagerFactory.getTrustManagers(), null);
-			} catch (Exception e) {
-				throw new IOException("Failed to initialize SSL Context for the Netty client", e);
-			}
-		} else {
-			clientSSLContext = null;
+		try {
+			clientSSLContext = config.createClientSSLContext();
+		} catch (Exception e) {
+			throw new IOException("Failed to initialize SSL Context for the Netty client", e);
 		}
 
 		long end = System.currentTimeMillis();
