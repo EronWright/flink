@@ -181,6 +181,11 @@ public final class ConfigConstants {
 	public static final String TASK_MANAGER_DATA_PORT_KEY = "taskmanager.data.port";
 
 	/**
+	 * Config parameter to override SSL support for taskmanager's data transport
+	 */
+	public static final String TASK_MANAGER_DATA_SSL_ENABLED = "taskmanager.data.ssl.enabled";
+
+	/**
 	 * The config parameter defining the directories for temporary files.
 	 */
 	public static final String TASK_MANAGER_TMP_DIR_KEY = "taskmanager.tmp.dirs";
@@ -978,6 +983,11 @@ public final class ConfigConstants {
 	 * the TaskManager searches for a free port.
 	 */
 	public static final int DEFAULT_TASK_MANAGER_DATA_PORT = 0;
+
+	/**
+	 * The default value to override ssl support for task manager's data transport
+	 */
+	public static final boolean DEFAULT_TASK_MANAGER_DATA_SSL_ENABLED = true;
 
 	/**
 	 * The default directory for temporary files of the task manager.

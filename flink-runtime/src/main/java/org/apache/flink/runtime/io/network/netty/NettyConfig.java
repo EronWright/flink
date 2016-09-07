@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.io.network.netty;
 
+import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.net.SSLUtils;
 import org.slf4j.Logger;
@@ -48,12 +49,6 @@ public class NettyConfig {
 	public static final String SEND_RECEIVE_BUFFER_SIZE = "taskmanager.net.sendReceiveBufferSize";
 
 	public static final String TRANSPORT_TYPE = "taskmanager.net.transport";
-
-	/** SSL flag to override global ssl support */
-	public static final String SSL_ENABLED = "taskmanager.net.ssl.enabled";
-
-	/** The default value to override ssl support for Netty transport */
-	public static final boolean DEFAULT_SSL_ENABLED = true;
 
 	// ------------------------------------------------------------------------
 
@@ -235,7 +230,8 @@ public class NettyConfig {
 	}
 
 	public boolean getSSLEnabled() {
-		return config.getBoolean(SSL_ENABLED, DEFAULT_SSL_ENABLED)
+		return config.getBoolean(ConfigConstants.TASK_MANAGER_DATA_SSL_ENABLED,
+				ConfigConstants.DEFAULT_TASK_MANAGER_DATA_SSL_ENABLED)
 			&& SSLUtils.getSSLEnabled(config);
 	}
 
