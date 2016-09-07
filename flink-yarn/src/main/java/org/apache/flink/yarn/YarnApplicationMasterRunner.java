@@ -288,8 +288,14 @@ public class YarnApplicationMasterRunner {
 			LOG.debug("Starting Web Frontend");
 
 			webMonitor = BootstrapTools.startWebMonitorIfConfigured(config, actorSystem, jobManager, LOG);
+
+			String protocol = "http://";
+			if (config.getBoolean(ConfigConstants.JOB_MANAGER_WEB_SSL_FLAG,
+				ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_FLAG)) {
+				protocol = "https://";
+			}
 			final String webMonitorURL = webMonitor == null ? null :
-				"http://" + appMasterHostname + ":" + webMonitor.getServerPort();
+				protocol + appMasterHostname + ":" + webMonitor.getServerPort();
 
 			// 3: Flink's Yarn ResourceManager
 			LOG.debug("Starting YARN Flink Resource Manager");
