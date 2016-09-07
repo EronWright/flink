@@ -55,7 +55,8 @@ class AkkaSslITCase(_system: ActorSystem)
       config.setInteger(ConfigConstants.LOCAL_NUMBER_TASK_MANAGER, 1)
 
       config.setBoolean(ConfigConstants.SECURITY_SSL_ENABLED, true)
-      config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE, "src/test/resources/local127.keystore")
+      config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE,
+          "src/test/resources/local127.keystore")
       config.setString(ConfigConstants.SECURITY_SSL_KEYSTORE_PASSWORD, "password")
       config.setString(ConfigConstants.SECURITY_SSL_KEY_PASSWORD, "password")
       config.setString(ConfigConstants.SECURITY_SSL_TRUSTSTORE,
