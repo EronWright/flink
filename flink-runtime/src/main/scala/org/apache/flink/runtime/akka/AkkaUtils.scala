@@ -390,7 +390,8 @@ object AkkaUtils {
       ""
     }
 
-    ConfigFactory.parseString(configString + hostnameConfigString + cookieConfigString + sslConfigString).resolve()
+    ConfigFactory.parseString(configString + hostnameConfigString + cookieConfigString + 
+        sslConfigString).resolve()
   }
 
   def getLogLevel: String = {
