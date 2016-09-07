@@ -46,7 +46,9 @@ public class JobManagerConfigHandler implements RequestHandler {
 		for (String key : config.keySet()) {
 			gen.writeStartObject();
 			gen.writeStringField("key", key);
-			if(key.equals(ConfigConstants.SECURITY_COOKIE)) {
+
+			// Mask key values which contain sensitive information
+			if(key.toLowerCase().contains("password") || key.equals(ConfigConstants.SECURITY_COOKIE)) {
 				String value = config.getString(key, null);
 				if(value != null) {
 					value = "******";
@@ -56,7 +58,6 @@ public class JobManagerConfigHandler implements RequestHandler {
 			else {
 				gen.writeStringField("value", config.getString(key, null));
 			}
-
 			gen.writeEndObject();
 		}
 		gen.writeEndArray();

@@ -78,7 +78,7 @@ public class BlobRecoveryITCase {
 			}
 
 			String secureCookie = config.getString(ConfigConstants.SECURITY_COOKIE, null);
-			client = new BlobClient(serverAddress[0], secureCookie);
+			client = new BlobClient(serverAddress[0], config, secureCookie);
 
 			// Random data
 			byte[] expected = new byte[1024];
@@ -98,7 +98,7 @@ public class BlobRecoveryITCase {
 
 			// Close the client and connect to the other server
 			client.close();
-			client = new BlobClient(serverAddress[1], secureCookie);
+			client = new BlobClient(serverAddress[1], config, secureCookie);
 
 			// Verify request 1
 			try (InputStream is = client.get(keys[0])) {

@@ -28,11 +28,14 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.router.Handler;
 import io.netty.handler.codec.http.router.Router;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
 import org.apache.commons.io.FileUtils;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.akka.AkkaUtils;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
+import org.apache.flink.runtime.net.SSLUtils;
 import org.apache.flink.runtime.webmonitor.files.StaticFileServerHandler;
 import org.apache.flink.runtime.webmonitor.handlers.ClusterOverviewHandler;
 import org.apache.flink.runtime.webmonitor.handlers.ConstantTextHandler;
@@ -74,6 +77,8 @@ import scala.concurrent.ExecutionContextExecutor;
 import scala.concurrent.Promise;
 import scala.concurrent.duration.FiniteDuration;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -112,6 +117,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 	private final JobManagerRetriever retriever;
 
 	private final Router router;
+
+	private final SSLContext serverSSLContext;
 
 	private final ServerBootstrap bootstrap;
 
@@ -206,6 +213,23 @@ public class WebRuntimeMonitor implements WebMonitor {
 
 		ExecutionContextExecutor context = ExecutionContext$.MODULE$.fromExecutor(executorService);
 
+		// Config to enable https access to the web-ui
+		boolean enableSSL = config.getBoolean(
+				ConfigConstants.JOB_MANAGER_WEB_SSL_ENABLED,
+				ConfigConstants.DEFAULT_JOB_MANAGER_WEB_SSL_ENABLED) &&
+			SSLUtils.getSSLEnabled(config);
+
+		if (enableSSL) {
+			LOG.info("Enabling ssl for the web frontend");
+			try {
+				serverSSLContext = SSLUtils.createSSLServerContext(config);
+			} catch (Exception e) {
+				throw new IOException("Failed to initialize SSLContext for the web frontend", e);
+			}
+		} else {
+			serverSSLContext = null;
+		}
+
 		router = new Router()
 			// config how to interact with this web server
 			.GET("/config", handler(new DashboardConfigHandler(cfg.getRefreshInterval())))
@@ -249,16 +273,20 @@ public class WebRuntimeMonitor implements WebMonitor {
 			.GET("/taskmanagers", handler(new TaskManagersHandler(DEFAULT_REQUEST_TIMEOUT)))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/metrics", handler(new TaskManagersHandler(DEFAULT_REQUEST_TIMEOUT)))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/log", 
-				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout, TaskManagerLogHandler.FileMode.LOG, config))
+				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout,
+					TaskManagerLogHandler.FileMode.LOG, config, enableSSL))
 			.GET("/taskmanagers/:" + TaskManagersHandler.TASK_MANAGER_ID_KEY + "/stdout", 
-				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout, TaskManagerLogHandler.FileMode.STDOUT, config))
+				new TaskManagerLogHandler(retriever, context, jobManagerAddressPromise.future(), timeout,
+					TaskManagerLogHandler.FileMode.STDOUT, config, enableSSL))
 
 			// log and stdout
 			.GET("/jobmanager/log", logFiles.logFile == null ? new ConstantTextHandler("(log file unavailable)") :
-				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.logFile))
+				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.logFile,
+					enableSSL))
 
 			.GET("/jobmanager/stdout", logFiles.stdOutFile == null ? new ConstantTextHandler("(stdout file unavailable)") :
-				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.stdOutFile))
+				new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, logFiles.stdOutFile,
+					enableSSL))
 
 			// Cancel a job via GET (for proper integration with YARN this has to be performed via GET)
 			.GET("/jobs/:jobid/yarn-cancel", handler(new JobCancellationHandler()))
@@ -281,7 +309,7 @@ public class WebRuntimeMonitor implements WebMonitor {
 				.GET("/jars/:jarid/plan", handler(new JarPlanHandler(uploadDir)))
 
 				// run a jar
-				.POST("/jars/:jarid/run", handler(new JarRunHandler(uploadDir, timeout)))
+				.POST("/jars/:jarid/run", handler(new JarRunHandler(uploadDir, timeout, config)))
 
 				// upload a jar
 				.POST("/jars/upload", handler(new JarUploadHandler(uploadDir)))
@@ -297,7 +325,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 		}
 
 		// this handler serves all the static contents
-		router.GET("/:*", new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, webRootDir));
+		router.GET("/:*", new StaticFileServerHandler(retriever, jobManagerAddressPromise.future(), timeout, webRootDir,
+			enableSSL));
 
 		// add shutdown hook for deleting the directories and remaining temp files on shutdown
 		try {
@@ -321,8 +350,16 @@ public class WebRuntimeMonitor implements WebMonitor {
 			protected void initChannel(SocketChannel ch) {
 				Handler handler = new Handler(router);
 
+				// SSL should be the first handler in the pipeline
+				if (serverSSLContext != null) {
+					SSLEngine sslEngine = serverSSLContext.createSSLEngine();
+					sslEngine.setUseClientMode(false);
+					ch.pipeline().addLast("ssl", new SslHandler(sslEngine));
+				}
+
 				ch.pipeline()
 						.addLast(new HttpServerCodec())
+						.addLast(new ChunkedWriteHandler())
 						.addLast(new HttpRequestHandler(config,uploadDir))
 						.addLast(handler.name(), handler)
 						.addLast(new PipelineErrorHandler(LOG));
@@ -440,7 +477,8 @@ public class WebRuntimeMonitor implements WebMonitor {
 	//  Utilities
 	// ------------------------------------------------------------------------
 	private RuntimeMonitorHandler handler(RequestHandler handler) {
-		return new RuntimeMonitorHandler(handler, retriever, jobManagerAddressPromise.future(), timeout);
+		return new RuntimeMonitorHandler(handler, retriever, jobManagerAddressPromise.future(), timeout,
+			serverSSLContext !=  null);
 	}
 
 	File getBaseDir(Configuration configuration) {

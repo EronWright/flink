@@ -59,7 +59,8 @@ public class BlobCacheSuccessTest {
 			BlobClient blobClient = null;
 			try {
 
-				blobClient = new BlobClient(serverAddress, config.getString(ConfigConstants.SECURITY_COOKIE, null));
+				blobClient = new BlobClient(serverAddress, config,
+					config.getString(ConfigConstants.SECURITY_COOKIE, null));
 
 				blobKeys.add(blobClient.put(buf));
 				buf[0] = 1; // Make sure the BLOB key changes

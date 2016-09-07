@@ -57,7 +57,7 @@ public class BlobClientSecureTest extends BlobClientTest {
 			md.update(testBuffer);
 
 			InetSocketAddress serverAddress = new InetSocketAddress("localhost", BLOB_SERVER.getPort());
-			client = new BlobClient(serverAddress, "different");
+			client = new BlobClient(serverAddress, null, "different");
 
 			// Store some data
 			client.put(testBuffer);

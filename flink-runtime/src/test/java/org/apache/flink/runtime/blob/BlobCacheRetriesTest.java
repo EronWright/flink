@@ -55,7 +55,8 @@ public class BlobCacheRetriesTest {
 			BlobClient blobClient = null;
 			BlobKey key;
 			try {
-				blobClient = new BlobClient(serverAddress, config.getString(ConfigConstants.SECURITY_COOKIE, null));
+				blobClient = new BlobClient(serverAddress, config,
+					config.getString(ConfigConstants.SECURITY_COOKIE, null));
 
 				key = blobClient.put(data);
 			}
@@ -114,7 +115,8 @@ public class BlobCacheRetriesTest {
 			BlobClient blobClient = null;
 			BlobKey key;
 			try {
-				blobClient = new BlobClient(serverAddress, config.getString(ConfigConstants.SECURITY_COOKIE, null));
+				blobClient = new BlobClient(serverAddress, config,
+					config.getString(ConfigConstants.SECURITY_COOKIE, null));
 
 				key = blobClient.put(data);
 			}

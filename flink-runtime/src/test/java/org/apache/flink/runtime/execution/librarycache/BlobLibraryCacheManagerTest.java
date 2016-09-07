@@ -57,7 +57,8 @@ public class BlobLibraryCacheManagerTest {
 			Configuration config = new Configuration();
 			server = new BlobServer(config);
 			InetSocketAddress blobSocketAddress = new InetSocketAddress(server.getPort());
-			BlobClient bc = new BlobClient(blobSocketAddress, config.getString(ConfigConstants.SECURITY_COOKIE, null));
+			BlobClient bc = new BlobClient(blobSocketAddress, config,
+				config.getString(ConfigConstants.SECURITY_COOKIE, null));
 
 			keys.add(bc.put(buf));
 			buf[0] += 1;
@@ -143,7 +144,8 @@ public class BlobLibraryCacheManagerTest {
 			cache = new BlobCache(serverAddress, config);
 
 			// upload some meaningless data to the server
-			BlobClient uploader = new BlobClient(serverAddress, config.getString(ConfigConstants.SECURITY_COOKIE, null));
+			BlobClient uploader = new BlobClient(serverAddress, config,
+				config.getString(ConfigConstants.SECURITY_COOKIE, null));
 			BlobKey dataKey1 = uploader.put(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
 			BlobKey dataKey2 = uploader.put(new byte[]{11, 12, 13, 14, 15, 16, 17, 18});
 			uploader.close();

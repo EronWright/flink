@@ -507,10 +507,12 @@ public class JobGraph implements Serializable {
 	 *
 	 * @param jobManager JobManager actor gateway
 	 * @param askTimeout Ask timeout
+	 * @param blobClientConfig the blob client configuration
 	 * @throws IOException Thrown, if the file upload to the JobManager failed.
 	 */
-	public void uploadUserJars(ActorGateway jobManager, FiniteDuration askTimeout) throws IOException {
-		List<BlobKey> blobKeys = BlobClient.uploadJarFiles(jobManager, askTimeout, userJars);
+	public void uploadUserJars(ActorGateway jobManager, FiniteDuration askTimeout,
+			Configuration blobClientConfig) throws IOException {
+		List<BlobKey> blobKeys = BlobClient.uploadJarFiles(jobManager, askTimeout, blobClientConfig, userJars);
 
 		for (BlobKey blobKey : blobKeys) {
 			if (!userJarBlobKeys.contains(blobKey)) {
