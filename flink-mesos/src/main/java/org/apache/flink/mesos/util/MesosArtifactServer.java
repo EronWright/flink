@@ -20,11 +20,25 @@ package org.apache.flink.mesos.util;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.DefaultHttpResponse;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.router.Handler;
 import io.netty.handler.codec.http.router.Routed;
 import io.netty.handler.codec.http.router.Router;
@@ -83,7 +97,7 @@ public class MesosArtifactServer {
 
 	private final Map<Path,URL> paths = new HashMap<>();
 
-	public MesosArtifactServer(String sessionID, String serverHostname, int configuredPort) throws Exception {
+	public MesosArtifactServer(String prefix, String serverHostname, int configuredPort) throws Exception {
 		if (configuredPort < 0 || configuredPort > 0xFFFF) {
 			throw new IllegalArgumentException("File server port is invalid: " + configuredPort);
 		}
@@ -120,7 +134,7 @@ public class MesosArtifactServer {
 		String address = bindAddress.getAddress().getHostAddress();
 		int port = bindAddress.getPort();
 
-		baseURL = new URL("http", serverHostname, port, "/" + sessionID + "/");
+		baseURL = new URL("http", serverHostname, port, "/" + prefix + "/");
 
 		LOG.info("Mesos artifact server listening at {}:{}", address, port);
 	}
@@ -177,6 +191,18 @@ public class MesosArtifactServer {
 		return fileURL;
 	}
 
+	public synchronized void removePath(Path remoteFile) {
+		if(paths.containsKey(remoteFile)) {
+			URL fileURL = null;
+			try {
+				fileURL = new URL(baseURL, remoteFile.toString());
+			} catch (MalformedURLException e) {
+				throw new RuntimeException(e);
+			}
+			router.removePath(fileURL.getPath());
+		}
+	}
+
 	public synchronized Option<URL> resolve(Path remoteFile) {
 		Option<URL> resolved = Option.apply(paths.getOrDefault(remoteFile, null));
 		return resolved;
@@ -214,7 +240,7 @@ public class MesosArtifactServer {
 				throw new IllegalArgumentException("path must be absolute: " + path.toString());
 			}
 			this.fs = path.getFileSystem();
-			if(!fs.exists(path)) {
+			if(!fs.exists(path) || fs.getFileStatus(path).isDir()) {
 				throw new IllegalArgumentException("no such file: " + path.toString());
 			}
 		}

@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A standalone Mesos worker store.
+ * A standalone Mesos session store.
  */
 public class StandaloneMesosSessionStore implements MesosSessionStore {
 
@@ -35,53 +35,57 @@ public class StandaloneMesosSessionStore implements MesosSessionStore {
 
 	private int taskCount = 0;
 
-	private Map<Protos.TaskID, Session> storedSessions = new LinkedHashMap<>();
+	private Map<Protos.TaskID, Session> storedTasks = new LinkedHashMap<>();
 
 	public StandaloneMesosSessionStore() {
 	}
 
 	@Override
-	public void start() throws Exception {
+	public void start() throws PersistenceException {
 
 	}
 
 	@Override
-	public void stop() throws Exception {
+	public void stop() throws PersistenceException {
 
 	}
 
 	@Override
-	public Option<Protos.FrameworkID> getFrameworkID() throws Exception {
+	public Option<Protos.FrameworkID> getFrameworkID() throws PersistenceException {
 		return frameworkID;
 	}
 
 	@Override
-	public void setFrameworkID(Option<Protos.FrameworkID> frameworkID) throws Exception {
+	public void setFrameworkID(Option<Protos.FrameworkID> frameworkID) throws PersistenceException {
 		this.frameworkID = frameworkID;
 	}
 
 	@Override
-	public List<Session> recoverSessions() throws Exception {
-		return ImmutableList.copyOf(storedSessions.values());
+	public List<Session> recoverTasks() throws PersistenceException {
+		return ImmutableList.copyOf(storedTasks.values());
 	}
 
 	@Override
-	public Protos.TaskID newTaskID() throws Exception {
+	public Protos.TaskID newTaskID() throws PersistenceException {
 		Protos.TaskID taskID = Protos.TaskID.newBuilder().setValue(TASKID_FORMAT.format(++taskCount)).build();
 		return taskID;
 	}
 
 	@Override
-	public void putSession(Session session) throws Exception {
-		storedSessions.put(session.taskID(), session);
+	public void putTask(Session... tasks) throws PersistenceException {
+		for (Session task : tasks) {
+			storedTasks.put(task.taskID(), task);
+		}
 	}
 
 	@Override
-	public void removeSession(Protos.TaskID taskID) throws Exception {
-		storedSessions.remove(taskID);
+	public void removeTask(Protos.TaskID... taskIDs) throws PersistenceException {
+		for (Protos.TaskID taskID : taskIDs) {
+			storedTasks.remove(taskID);
+		}
 	}
 
 	@Override
-	public void cleanup() throws Exception {
+	public void cleanup() throws PersistenceException {
 	}
 }

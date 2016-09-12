@@ -24,7 +24,7 @@ import java.util.Map;
 
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
+import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.taskmanager.TaskManager;
 import org.apache.flink.runtime.util.EnvironmentInformation;
@@ -61,7 +61,7 @@ public class MesosTaskManagerRunner {
 
 			// add dynamic properties to TaskManager configuration.
 			final Configuration dynamicProperties =
-				FlinkMesosSessionCli.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
+				BootstrapTools.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
 			LOG.debug("Mesos dynamic properties: {}", dynamicProperties);
 			configuration.addAll(dynamicProperties);
 		}

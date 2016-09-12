@@ -158,6 +158,7 @@ class TaskMonitor(
         case TASK_STAGING | TASK_STARTING => goto(Staging)
         case TASK_RUNNING =>
           LOG.info(s"Mesos task ${goal.taskID.getValue} is running.")
+          context.parent ! TaskStarted(goal.taskID, msg.status())
           goto(Running)
         case TASK_FINISHED | TASK_LOST | TASK_FAILED | TASK_KILLED | TASK_ERROR =>
           LOG.warn(s"Mesos task ${goal.taskID.getValue} failed unexpectedly.")
@@ -208,6 +209,7 @@ object TaskMonitor {
 
   /**
     * The task monitor state data.
+    *
     * @param goal the goal (intentional) state of the task.
     */
   case class StateData(goal:TaskGoalState)
@@ -231,6 +233,13 @@ object TaskMonitor {
     * Conveys an update to the goal (intentional) state of a given task.
     */
   case class TaskGoalStateUpdated(state: TaskGoalState)
+
+  /**
+    * Indicates that the Mesos task has started.
+    *
+    * Note that this message may occur more than once for a given task.
+    */
+  case class TaskStarted(taskID: Protos.TaskID, status: Protos.TaskStatus)
 
   /**
     * Indicates that the Mesos task has terminated for whatever reason.

@@ -28,6 +28,11 @@ import org.apache.mesos.Protos;
 public interface LaunchableTask {
 
 	/**
+	 * Get the task ID of the launchable task.
+     */
+	Protos.TaskID taskID();
+
+	/**
 	 * Get a representation of the task requirements as understood by Fenzo.
      */
 	TaskRequest taskRequest();

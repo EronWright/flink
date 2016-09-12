@@ -23,8 +23,8 @@ import com.netflix.fenzo.TaskAssignmentResult;
 import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.VMTaskFitnessCalculator;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
 import org.apache.flink.mesos.scheduler.LaunchableTask;
+import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.mesos.Protos;
 
 import java.util.Collections;
@@ -187,13 +187,20 @@ public class LaunchableMesosWorker implements LaunchableTask {
 			.addVariables(variable(MesosConfigKeys.ENV_FLINK_CONTAINER_ID, taskInfo.getTaskId().getValue()));
 
 		// propagate the dynamic configuration properties to the TM
-		String dynamicPropertiesEncoded = FlinkMesosSessionCli.encodeDynamicProperties(dynamicProperties);
+		String dynamicPropertiesEncoded = BootstrapTools.encodeDynamicProperties(dynamicProperties);
 		environmentBuilder
 			.addVariables(variable(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES, dynamicPropertiesEncoded));
 
 		return taskInfo.build();
 	}
 
+//	SessionID extractSessionID(Protos.TaskStatus status) {
+//		checkArgument(status.hasLabels());
+//		Map<String,String> labels = toMap(status.getLabels());
+//		checkArgument(labels.containsKey(LABEL_SESSIONID));
+//		return SessionID.fromHexString(labels.get(LABEL_SESSIONID));
+//	}
+//
 	@Override
 	public String toString() {
 		return "LaunchableMesosWorker{" +

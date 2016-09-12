@@ -36,8 +36,8 @@ public class MesosConfigKeys {
 	public static final String ENV_FLINK_TMP_DIR = "_FLINK_TMP_DIR";
 	public static final String ENV_FLINK_CLASSPATH = "_FLINK_CLASSPATH";
 	public static final String ENV_CLASSPATH = "CLASSPATH";
+	public static final String ENV_LIBPROCESS_PORT = "LIBPROCESS_PORT";
 	public static final String ENV_MESOS_SANDBOX = "MESOS_SANDBOX";
-//	public static final String ENV_SESSION_ID = "_CLIENT_SESSION_ID";
 
 	/** Private constructor to prevent instantiation */
 	private MesosConfigKeys() {}

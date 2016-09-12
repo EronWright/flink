@@ -68,12 +68,12 @@ class LaunchCoordinatorTest
   }
 
   def randomTask = {
-    val taskID = Protos.TaskID.newBuilder.setValue(UUID.randomUUID.toString).build
+    val randomTaskID = Protos.TaskID.newBuilder.setValue(UUID.randomUUID.toString).build
 
     def generateTaskRequest = {
       new TaskRequest() {
         private[mesos] val assignedResources = new AtomicReference[TaskRequest.AssignedResources]
-        override def getId: String = taskID.getValue
+        override def getId: String = randomTaskID.getValue
         override def taskGroupName: String = ""
         override def getCPUs: Double = 1.0
         override def getMemory: Double = 1024.0
@@ -92,6 +92,7 @@ class LaunchCoordinatorTest
     }
 
     val task: LaunchableTask = new LaunchableTask() {
+      override val taskID: Protos.TaskID = randomTaskID
       override def taskRequest: TaskRequest = generateTaskRequest
       override def launch(
           slaveId: SlaveID,
@@ -105,7 +106,7 @@ class LaunchCoordinatorTest
       override def toString = taskRequest.getId
     }
 
-    (taskID, task)
+    (randomTaskID, task)
   }
 
   def randomSlave = {

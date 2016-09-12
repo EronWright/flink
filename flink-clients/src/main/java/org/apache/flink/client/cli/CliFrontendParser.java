@@ -83,7 +83,7 @@ public class CliFrontendParser {
 			"Show only scheduled programs and their JobIDs");
 
 	static final Option ZOOKEEPER_NAMESPACE_OPTION = new Option("z", "zookeeperNamespace", true,
-			"Namespace to create the Zookeeper sub-paths for high availability mode");
+			"Namespace for the Zookeeper sub-paths in high availability mode");
 
 	static {
 		HELP_OPTION.setRequired(false);
@@ -147,7 +147,6 @@ public class CliFrontendParser {
 		options.addOption(LOGGING_OPTION);
 		options.addOption(DETACHED_OPTION);
 		options.addOption(SAVEPOINT_PATH_OPTION);
-		options.addOption(ZOOKEEPER_NAMESPACE_OPTION);
 		return options;
 	}
 
@@ -158,7 +157,6 @@ public class CliFrontendParser {
 		options.addOption(LOGGING_OPTION);
 		options.addOption(DETACHED_OPTION);
 		options.addOption(SAVEPOINT_PATH_OPTION);
-		options.addOption(ZOOKEEPER_NAMESPACE_OPTION);
 		return options;
 	}
 
@@ -171,6 +169,7 @@ public class CliFrontendParser {
 
 	private static Options getJobManagerAddressOption(Options options) {
 		options.addOption(ADDRESS_OPTION);
+		options.addOption(ZOOKEEPER_NAMESPACE_OPTION);
 		return options;
 	}
 

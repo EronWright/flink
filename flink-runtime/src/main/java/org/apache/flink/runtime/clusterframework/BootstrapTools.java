@@ -21,6 +21,9 @@ package org.apache.flink.runtime.clusterframework;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Address;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.typesafe.config.Config;
 
 import org.apache.flink.configuration.ConfigConstants;
@@ -42,8 +45,11 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.BindException;
 import java.net.ServerSocket;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -51,6 +57,8 @@ import java.util.Map;
  * Actor Systems used to run the JobManager and TaskManager actors.
  */
 public class BootstrapTools {
+
+	private static final ObjectMapper mapper = new ObjectMapper();
 
 	/**
 	 * Starts an ActorSystem with the given configuration listening at the address/ports.
@@ -247,6 +255,14 @@ public class BootstrapTools {
 		}
 	}
 
+	public static void logConfiguration(Configuration cfg, Logger logger) {
+		List<String> keys = new ArrayList<>(cfg.keySet());
+		Collections.sort(keys);
+		for (String key : keys) {
+			String value = cfg.getString(key, null);
+			logger.info("  {}: {}", key, value);
+		}
+	}
 	/**
 	* Sets the value of a new config key to the value of a deprecated config key.
 	* @param config Config to write
@@ -409,6 +425,45 @@ public class BootstrapTools {
 			}
 		}
 		return result;
+	}
+
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Encode dynamic properties as a string to be transported as an environment variable.
+	 * @param configuration the dynamic properties to encode.
+	 * @return a string to be decoded later.
+	 */
+	public static String encodeDynamicProperties(Configuration configuration) {
+		try {
+			String dynamicPropertiesEncoded = mapper.writeValueAsString(configuration.toMap());
+			return dynamicPropertiesEncoded;
+		}
+		catch (JsonProcessingException ex) {
+			throw new IllegalArgumentException("unwritable properties", ex);
+		}
+	}
+
+	/**
+	 * Decode encoded dynamic properties.
+	 * @param dynamicPropertiesEncoded encoded properties produced by the encoding method.
+	 * @return a configuration instance to be merged with the static configuration.
+	 */
+	public static Configuration decodeDynamicProperties(String dynamicPropertiesEncoded) {
+		try {
+			Configuration configuration = new Configuration();
+			if(dynamicPropertiesEncoded != null) {
+				TypeReference<Map<String, String>> typeRef = new TypeReference<Map<String, String>>() {};
+				Map<String,String> props = mapper.readValue(dynamicPropertiesEncoded, typeRef);
+				for (Map.Entry<String, String> property : props.entrySet()) {
+					configuration.setString(property.getKey(), property.getValue());
+				}
+			}
+			return configuration;
+		}
+		catch(IOException ex) {
+			throw new IllegalArgumentException("unreadable encoded properties", ex);
+		}
 	}
 
 	// ------------------------------------------------------------------------

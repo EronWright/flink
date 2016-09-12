@@ -2,9 +2,11 @@ package org.apache.flink.mesos.dispatcher
 
 import java.util.UUID
 
+import org.apache.flink.mesos.dispatcher.types.{SessionID, SessionParameters, SessionStatus}
 import org.apache.flink.runtime.messages.RequiresLeaderSessionID
 
 /**
+  * Dispatcher actor messages.
   */
 object DispatcherMessages {
 
@@ -18,7 +20,21 @@ object DispatcherMessages {
     */
   case class RevokeLeadership()
 
+  /**
+    * Start a new session.
+    */
+  case class StartSession(params: SessionParameters) extends RequiresLeaderSessionID
 
-  case class StartSession() extends RequiresLeaderSessionID
+  /**
+    * Stop a session.
+    */
+  case class StopSession(sessionID: SessionID) extends RequiresLeaderSessionID
+
+  /**
+    * A status update message.
+    *
+    * @param sessionStatus the status.
+    */
+  case class SessionStatusUpdate(sessionStatus: SessionStatus)
 
 }

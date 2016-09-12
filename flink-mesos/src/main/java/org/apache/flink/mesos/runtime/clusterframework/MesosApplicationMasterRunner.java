@@ -28,7 +28,6 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.configuration.IllegalConfigurationException;
-import org.apache.flink.mesos.cli.FlinkMesosSessionCli;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
 import org.apache.flink.mesos.runtime.clusterframework.store.StandaloneMesosWorkerStore;
 import org.apache.flink.mesos.runtime.clusterframework.store.ZooKeeperMesosWorkerStore;
@@ -187,7 +186,7 @@ public class MesosApplicationMasterRunner {
 
 			// Flink configuration
 			final Configuration dynamicProperties =
-				FlinkMesosSessionCli.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
+				BootstrapTools.decodeDynamicProperties(ENV.get(MesosConfigKeys.ENV_DYNAMIC_PROPERTIES));
 			LOG.debug("Mesos dynamic properties: {}", dynamicProperties);
 
 			final Configuration config = createConfiguration(workingDir, dynamicProperties);
@@ -254,9 +253,10 @@ public class MesosApplicationMasterRunner {
 
 			// try to start the artifact server
 			LOG.debug("Starting Artifact Server");
+			String prefix = UUID.randomUUID().toString();
 			final int artifactServerPort = config.getInteger(ConfigConstants.MESOS_ARTIFACT_SERVER_PORT_KEY,
 				ConfigConstants.DEFAULT_MESOS_ARTIFACT_SERVER_PORT);
-			artifactServer = new MesosArtifactServer(sessionID, akkaHostname, artifactServerPort);
+			artifactServer = new MesosArtifactServer(prefix, akkaHostname, artifactServerPort);
 
 			// ----------------- (3) Generate the configuration for the TaskManagers -------------------
 
@@ -422,8 +422,6 @@ public class MesosApplicationMasterRunner {
 		LOG.info("Loading config from directory {}", baseDirectory);
 
 		Configuration configuration = GlobalConfiguration.loadConfiguration(baseDirectory);
-
-		configuration.setString(ConfigConstants.FLINK_BASE_DIR_PATH_KEY, baseDirectory);
 
 		// add dynamic properties to JobManager configuration.
 		configuration.addAll(additional);

@@ -6,52 +6,67 @@ import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.TaskScheduler;
 import com.netflix.fenzo.VirtualMachineLease;
 import com.netflix.fenzo.functions.Action1;
-import org.apache.curator.utils.ZKPaths;
-import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.core.fs.Path;
 import org.apache.flink.mesos.dispatcher.store.MesosSessionStore;
+import org.apache.flink.mesos.dispatcher.store.PersistenceException;
 import org.apache.flink.mesos.dispatcher.types.SessionDefaults;
 import org.apache.flink.mesos.dispatcher.types.SessionID;
 import org.apache.flink.mesos.dispatcher.types.SessionIDRetrievable;
 import org.apache.flink.mesos.dispatcher.types.SessionParameters;
-import org.apache.flink.mesos.scheduler.*;
-import org.apache.flink.mesos.scheduler.messages.*;
+import org.apache.flink.mesos.dispatcher.types.SessionStatus;
+import org.apache.flink.mesos.scheduler.ConnectionMonitor;
+import org.apache.flink.mesos.scheduler.LaunchCoordinator;
+import org.apache.flink.mesos.scheduler.LaunchableTask;
+import org.apache.flink.mesos.scheduler.ReconciliationCoordinator;
+import org.apache.flink.mesos.scheduler.SchedulerProxy;
+import org.apache.flink.mesos.scheduler.TaskMonitor;
+import org.apache.flink.mesos.scheduler.TaskSchedulerBuilder;
+import org.apache.flink.mesos.scheduler.Tasks;
+import org.apache.flink.mesos.scheduler.messages.AcceptOffers;
+import org.apache.flink.mesos.scheduler.messages.Disconnected;
 import org.apache.flink.mesos.scheduler.messages.Error;
-import org.apache.flink.mesos.util.MesosArtifactResolver;
-import org.apache.flink.mesos.util.MesosArtifactServer;
+import org.apache.flink.mesos.scheduler.messages.Error;
+import org.apache.flink.mesos.scheduler.messages.OfferRescinded;
+import org.apache.flink.mesos.scheduler.messages.ReRegistered;
+import org.apache.flink.mesos.scheduler.messages.Registered;
+import org.apache.flink.mesos.scheduler.messages.ResourceOffers;
+import org.apache.flink.mesos.scheduler.messages.StatusUpdate;
 import org.apache.flink.mesos.util.MesosConfiguration;
-import org.apache.flink.mesos.util.ZooKeeperUtils;
-import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.clusterframework.messages.FatalErrorOccurred;
-import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.mesos.Protos;
 import org.apache.mesos.SchedulerDriver;
-import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import scala.Option;
 
-import java.io.File;
-import java.io.IOException;
 import java.io.Serializable;
-import java.net.URL;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 import static java.util.Objects.requireNonNull;
-import static org.apache.flink.mesos.Utils.uri;
-import static org.apache.flink.mesos.Utils.variable;
-import static org.apache.flink.mesos.runtime.clusterframework.MesosConfigKeys.ENV_CLASSPATH;
-import static org.apache.flink.mesos.runtime.clusterframework.MesosConfigKeys.ENV_CLIENT_SHIP_FILES;
-import static org.apache.flink.mesos.runtime.clusterframework.MesosConfigKeys.ENV_FLINK_CLASSPATH;
+
+import static org.apache.flink.util.Preconditions.checkArgument;
 
 /**
  *
+ * Dispatcher backend for Apache Mesos.
+ *
+ * Uses Mesos tasks to launch jobmaster instances to support Flink sessions.
+ *
  * Leadership bestows write access to Mesos.
  */
-public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispatcherBackend.MesosSession> {
+public class MesosDispatcherBackend
+	extends AbstractDispatcherBackend<MesosDispatcherBackend.MesosSession> {
+
+	private static final int MAX_ATTEMPTS = 3;
 
 	/** The Mesos configuration (master and framework info) */
 	private final MesosConfiguration mesosConfig;
@@ -62,12 +77,7 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 	/** The persistent session store */
 	private final MesosSessionStore sessionStore;
 
-	/** in-memory session state */
-	private final SessionState sessionState;
-
-	final Map<ResourceID, MesosSessionStore.Session> mastersInNew;
-	final Map<ResourceID, MesosSessionStore.Session> mastersInLaunch;
-	final Map<ResourceID, MesosSessionStore.Session> mastersBeingReturned;
+	private final TaskCache taskCache;
 
 	/** Callback handler for the asynchronous Mesos scheduler */
 	private SchedulerProxy schedulerCallbackHandler;
@@ -83,9 +93,11 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 
 	private ActorRef reconciliationCoordinator;
 
-	private MesosArtifactServer artifactServer;
+	private SessionArtifactServer artifactServer;
 
 	private SessionDefaults sessionDefaults;
+
+	private ActorRef sessionStatusListener;
 
 	public MesosDispatcherBackend(
 		Configuration flinkConfig,
@@ -94,8 +106,8 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		MesosSessionStore sessionStore,
 		SessionDefaults sessionDefaults,
 		LeaderElectionService leaderElectionService,
-		MesosArtifactServer artifactServer,
-		Path flinkJar) {
+		SessionArtifactServer artifactServer,
+		ActorRef sessionStatusListener) {
 
 		super(flinkConfig, leaderElectionService);
 
@@ -103,13 +115,10 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		this.appMasterTaskInfo = requireNonNull(appMasterTaskInfo);
 		this.sessionStore = requireNonNull(sessionStore);
 		this.sessionDefaults = requireNonNull(sessionDefaults);
-		this.artifactServer = artifactServer;
+		this.artifactServer = requireNonNull(artifactServer);
+		this.sessionStatusListener = sessionStatusListener;
 
-		this.mastersInNew = new HashMap<>();
-		this.mastersInLaunch = new HashMap<>();
-		this.mastersBeingReturned = new HashMap<>();
-
-		this.sessionState = new SessionState(flinkJar);
+		this.taskCache = new TaskCache(sessionStore);
 	}
 
 	@Override
@@ -183,6 +192,14 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 			revokeLeadership();
 		}
 
+		// --- messages about sessions
+		else if (message instanceof DispatcherMessages.StartSession) {
+			requestSession(((DispatcherMessages.StartSession) message).params());
+		}
+		else if (message instanceof DispatcherMessages.StopSession) {
+			releaseSession(((DispatcherMessages.StopSession) message).sessionID());
+		}
+
 		// --- messages about Mesos connection
 		else if (message instanceof Registered) {
 			registered((Registered) message);
@@ -209,6 +226,10 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 			// a termination message from a task
 			TaskMonitor.TaskTerminated msg = (TaskMonitor.TaskTerminated) message;
 			taskTerminated(msg.taskID(), msg.status());
+		} else if (message instanceof TaskMonitor.TaskStarted) {
+			// a started message from a task
+			TaskMonitor.TaskStarted msg = (TaskMonitor.TaskStarted) message;
+			taskStarted(msg.taskID(), msg.status());
 
 		} else  {
 			// message handled by the generic resource master code
@@ -226,12 +247,14 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		System.exit(EXIT_CODE_FATAL_ERROR);
 	}
 
-	// --------- LEADERSHIP ------------------
+	// ------------------------------------------------------------------------
+	// Dispatcher leadership
+	// ------------------------------------------------------------------------
 
 	private void grantLeadership(Option<UUID> leaderSessionID) {
 
 		try {
-			// recover from the session store
+			// recover from persistent store
 			recoverSessions();
 
 			// connect to Mesos
@@ -294,66 +317,112 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 	}
 
 	/**
-	 * Handle a task status change.
-	 */
-	private void taskStatusUpdated(StatusUpdate message) {
-		taskRouter.tell(message, self());
-		reconciliationCoordinator.tell(message, self());
-		schedulerDriver.acknowledgeStatusUpdate(message.status());
-	}
-
-	/**
 	 * Called when an error is reported by the scheduler callback.
 	 */
 	private void error(String message) {
 		self().tell(new FatalErrorOccurred("Connection to Mesos failed", new Exception(message)), self());
 	}
 
-	// ---------  SESSION MGMT -------------
+	// ------------------------------------------------------------------------
+	//  Session management
+	// ------------------------------------------------------------------------
 
 	private void recoverSessions() throws Exception {
-		final List<MesosSessionStore.Session> recovered = sessionStore.recoverSessions();
+		
+		// recover the tasks that host the sessions
+		final List<MesosSessionStore.Session> recovered = taskCache.recoverTasks();
+		LOG.info("Retrieved {} session tasks from previous attempt", recovered.size());
 
-		mastersInNew.clear();
-		mastersInLaunch.clear();
-		mastersBeingReturned.clear();
+		List<Tuple2<TaskRequest,String>> toAssign = new ArrayList<>(recovered.size());
+		List<LaunchableTask> toLaunch = new ArrayList<>(recovered.size());
 
-		LOG.info("Retrieved {} JobMasters from previous attempt", recovered.size());
-
-		if(!recovered.isEmpty()) {
-
-			List<Tuple2<TaskRequest,String>> toAssign = new ArrayList<>(recovered.size());
-			List<LaunchableTask> toLaunch = new ArrayList<>(recovered.size());
-
-			for (final MesosSessionStore.Session master : recovered) {
-
-				switch(master.state()) {
-					case New:
-						LaunchableMesosSession newSession = sessionState.createLaunchableMesosSession(master);
-						mastersInNew.put(extractResourceID(master.taskID()), master);
-						toLaunch.add(newSession);
-						break;
-					case Launched:
-						LaunchableMesosSession launchedSession = sessionState.createLaunchableMesosSession(master);
-						mastersInLaunch.put(extractResourceID(master.taskID()), master);
-						toAssign.add(new Tuple2<>(launchedSession.taskRequest(), master.hostname().get()));
-						break;
-					case Released:
-						mastersBeingReturned.put(extractResourceID(master.taskID()), master);
-						break;
-				}
-				taskRouter.tell(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(master)), self());
+		// scan the tasks
+		Map<SessionID, MesosSessionStore.Session> latestTaskForSession = new HashMap<>();
+		LaunchableMesosSession launchable;
+		for (final MesosSessionStore.Session task : recovered) {
+			switch(task.state()) {
+				case New:
+					artifactServer.add(task);
+					launchable = createLaunchableMesosSession(task);
+					toLaunch.add(launchable);
+					break;
+				case Launched:
+					artifactServer.add(task);
+					launchable = createLaunchableMesosSession(task);
+					toAssign.add(new Tuple2<>(launchable.taskRequest(), task.hostname().get()));
+					break;
+				case Released:
+					break;
 			}
 
-			// tell the launch coordinator about prior assignments
-			if(toAssign.size() >= 1) {
-				launchCoordinator.tell(new LaunchCoordinator.Assign(toAssign), self());
-			}
-			// tell the launch coordinator to launch any new tasks
-			if(toLaunch.size() >= 1) {
-				launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
-			}
+			// tell the task router about the new plans
+			taskRouter.tell(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(task)), self());
 		}
+
+//		// start replacement tasks
+//		for(Map.Entry<SessionID,List<MesosSessionStore.Session>> session : taskCache.getSessions().entrySet()) {
+//			assert(session.getValue().size() >= 1);
+//			MesosSessionStore.Session latestTask = session.getValue().get(session.getValue().size() - 1);
+//			if(latestTask.state() == MesosSessionStore.TaskState.Released &&
+//				latestTask.reason() == MesosSessionStore.TaskReleaseReason.Failed) {
+//				rescheduleTask(latestTask);
+//			}
+//		}
+
+		// tell the launch coordinator about prior assignments
+		if(toAssign.size() >= 1) {
+			launchCoordinator.tell(new LaunchCoordinator.Assign(toAssign), self());
+		}
+		// tell the launch coordinator to launch any new tasks
+		if(toLaunch.size() >= 1) {
+			launchCoordinator.tell(new LaunchCoordinator.Launch(toLaunch), self());
+		}
+	}
+
+	/**
+	 * Plan for a new session.
+	 * @param sessionParameters the session parameters.
+	 */
+	private void requestSession(SessionParameters sessionParameters) {
+		try {
+			if(!taskCache.findTasks(sessionParameters.sessionID()).isEmpty()) {
+				// session already exists
+				// todo produce an error
+				return;
+			}
+
+			// generate a session task into persistent state
+			MesosSessionStore.Session task = MesosSessionStore.Session.newTask(
+				sessionParameters, new Configuration(), sessionStore.newTaskID());
+			taskCache.putTask(task);
+
+			// schedule the task using the launch coordinator
+			scheduleTask(task);
+		}
+		catch(Exception ex) {
+			fatalError("unable to request a new session", ex);
+		}
+	}
+
+	/**
+	 * Schedule the given task.
+	 */
+	private void scheduleTask(MesosSessionStore.Session task) {
+		checkArgument(task.state() == MesosSessionStore.TaskState.New);
+
+		LOG.info("Scheduling Mesos task {} with ({} MB, {} cpus).",
+			task.taskID(), task.params().tmProfile().mem(), task.params().tmProfile().cpus());
+
+		LaunchableMesosSession launchable = createLaunchableMesosSession(task);
+
+		artifactServer.add(task);
+
+		// tell the task router about the new plans
+		taskRouter.tell(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(task)), self());
+
+		// tell the launch coordinator to launch the new task
+		launchCoordinator.tell(new LaunchCoordinator.Launch(
+			Collections.singletonList((LaunchableTask) launchable)), self());
 	}
 
 	/**
@@ -366,33 +435,42 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		try {
 			List<TaskMonitor.TaskGoalStateUpdated> toMonitor = new ArrayList<>(msg.operations().size());
 
-			// transition the persistent state of some tasks to Launched
+			// transition the persistent state of some sessions to Launched
 			for (Protos.Offer.Operation op : msg.operations()) {
 				if (op.getType() != Protos.Offer.Operation.Type.LAUNCH) {
 					continue;
 				}
 				for (Protos.TaskInfo info : op.getLaunch().getTaskInfosList()) {
-					MesosSessionStore.Session master = mastersInNew.remove(extractResourceID(info.getTaskId()));
-					assert (master != null);
+					Option<MesosSessionStore.Session> task = taskCache.getTask(info.getTaskId());
+					if(task.isEmpty()) {
+						LOG.error("Attempted to accept an offer for non-existent task {}", info.getTaskId());
+						throw new IllegalStateException("task unexpectedly missing");
+					}
 
-					master = master.launchTask(info.getSlaveId(), msg.hostname());
-					sessionStore.putSession(master);
-					mastersInLaunch.put(extractResourceID(master.taskID()), master);
+					Option<LaunchableTask> launchable = msg.findLaunchableTask(info.getTaskId());
+					if(launchable.isEmpty()) {
+						throw new IllegalStateException("invalid AcceptOffers messsage");
+					}
+					LaunchableMesosSession launchableTask = (LaunchableMesosSession) launchable.get();
+
+					MesosSessionStore.Session launched = task.get().launchTask(
+						launchableTask.dynamicProperties(), info.getSlaveId(), msg.hostname());
+					taskCache.putTask(launched);
 
 					LOG.info("Launching Mesos task {} on host {}.",
-						master.taskID().getValue(), master.hostname().get());
+						launched.taskID().getValue(), launched.hostname().get());
 
-					toMonitor.add(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(master)));
+					toMonitor.add(new TaskMonitor.TaskGoalStateUpdated(extractGoalState(launched)));
 				}
 			}
+
+			// send the acceptance message to Mesos
+			schedulerDriver.acceptOffers(msg.offerIds(), msg.operations(), msg.filters());
 
 			// tell the task router about the new plans
 			for (TaskMonitor.TaskGoalStateUpdated update : toMonitor) {
 				taskRouter.tell(update, self());
 			}
-
-			// send the acceptance message to Mesos
-			schedulerDriver.acceptOffers(msg.offerIds(), msg.operations(), msg.filters());
 		}
 		catch(Exception ex) {
 			fatalError("unable to accept offers", ex);
@@ -400,37 +478,168 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 	}
 
 	/**
-	 * Plan for a new session.
-	 * @param sessionParameters the session parameters.
-     */
-	private void requestSession(SessionParameters sessionParameters) {
-
-	}
-
-	/**
 	 * Plan to release a given session.
 	 * @param sessionID the Session identifier.
      */
 	private void releaseSession(SessionID sessionID) {
+		try {
+			LOG.info("Releasing session {}", sessionID);
+			List<MesosSessionStore.Session> tasks = taskCache.findTasks(sessionID);
 
+			for(MesosSessionStore.Session task : tasks) {
+				if(task.state() == MesosSessionStore.TaskState.Released) {
+					continue;
+				}
+
+				LOG.info("Releasing task {} of session {}", task.taskID(), sessionID);
+				MesosSessionStore.Session released =
+					task.releaseTask(MesosSessionStore.TaskReleaseReason.Stopped);
+				taskCache.putTask(released);
+
+				// tell the task router about the updated plans
+				taskRouter.tell(
+					new TaskMonitor.TaskGoalStateUpdated(extractGoalState(released)), self());
+
+				if (released.hostname().isDefined()) {
+					// tell the launch coordinator that the task is being unassigned
+					// from the host, for planning purposes
+					launchCoordinator.tell(new LaunchCoordinator.Unassign(
+						released.taskID(), released.hostname().get()), self());
+				}
+			}
+
+		} catch (Exception ex) {
+			fatalError("unable to release session", ex);
+		}
 	}
 
+	// ------------------------------------------------------------------------
+	//  Callbacks related to tasks
+	// ------------------------------------------------------------------------
+
+	/**
+	 * Handle a task status change.
+	 */
+	private void taskStatusUpdated(StatusUpdate message) {
+		taskCache.putTaskStatus(message.status());
+		taskRouter.tell(message, self());
+		reconciliationCoordinator.tell(message, self());
+		schedulerDriver.acknowledgeStatusUpdate(message.status());
+	}
+
+	/**
+	 * Handle a started task.
+	 * @param taskID
+	 * @param taskStatus
+	 */
+	private void taskStarted(Protos.TaskID taskID, Protos.TaskStatus taskStatus) {
+
+		Option<MesosSessionStore.Session> task = taskCache.getTask(taskID);
+		if(!task.isDefined()) {
+			LOG.warn("Received a TaskStarted message for unknown task {}", taskID);
+			return;
+		}
+
+		SessionID sessionID = task.get().params().sessionID();
+
+		// double-check that the task corresponds to the latest attempt
+		List<MesosSessionStore.Session> tasksInSession = taskCache.findTasks(sessionID);
+		assert(tasksInSession.size() >= 1);
+		if(!taskID.equals(tasksInSession.get(tasksInSession.size() - 1).taskID())) {
+			LOG.warn("Received a TaskStarted message for obsolete task {}", taskID);
+			return;
+		}
+
+		if(sessionStatusListener != null) {
+			Configuration clientConfig = LaunchableMesosSession.getClientConfiguration(
+				task.get().params(), task.get().dynamicProperties(), Option.apply(taskStatus));
+
+			SessionStatus status = new SessionStatus(sessionID, clientConfig);
+
+			LOG.debug("Sending SessionStatusUpdate to listener(s): {}", status);
+			sessionStatusListener.tell(new DispatcherMessages.SessionStatusUpdate(status), self());
+		}
+	}
+
+	/**
+	 * Handle a task termination notice (as provided by the task monitor).
+     */
 	private void taskTerminated(Protos.TaskID taskID, Protos.TaskStatus status) {
 
+		// this callback occurs for failed tasks and for released tasks alike
+
+		final Option<MesosSessionStore.Session> terminated = taskCache.getTask(taskID);
+		if(terminated.isEmpty()) {
+			LOG.info("Received a termination notice for obsolete task {}", taskID);
+			return;
+		}
+		SessionID sessionID = terminated.get().params().sessionID();
+//		List<MesosSessionStore.Session> sessionTasks = taskCache.findTasks(sessionID);
+
+		if(terminated.get().state() == MesosSessionStore.TaskState.Released) {
+			// a planned termination
+			LOG.info("Task {} for session {} finished successfully with diagnostics: {}",
+				taskID, sessionID, status.getMessage());
+			artifactServer.remove(terminated.get());
+		}
+		else {
+			// unplanned termination (task failed unexpectedly)
+			LOG.warn("Task {} failed for session {}.  State: {} Reason: {} ({})",
+				taskID.getValue(), sessionID,
+				status.getState(), status.getReason(), status.getMessage());
+
+			// release the task and (optionally) plan for a replacement
+			try {
+				MesosSessionStore.Session released =
+					terminated.get().releaseTask(MesosSessionStore.TaskReleaseReason.Failed);
+
+				// create a replacement task
+				MesosSessionStore.Session rescheduled = null;
+				if(released.attempt() >= MAX_ATTEMPTS) {
+					LOG.warn("Session {} exceeded {} attempts, not rescheduling.",
+						sessionID, MAX_ATTEMPTS);
+					taskCache.putTask(released);
+				}
+				else {
+					rescheduled =
+						released.rescheduleTask(new Configuration(), sessionStore.newTaskID());
+					LOG.info("Scheduling replacement task {} for session {}.",
+						rescheduled.taskID().getValue(), sessionID);
+
+					// transactional put
+					taskCache.putTask(released, rescheduled);
+				}
+
+				if (released.hostname().isDefined()) {
+					// tell the launch coordinator that the task is being unassigned
+					// from the host, for planning purposes
+					launchCoordinator.tell(new LaunchCoordinator.Unassign(
+						released.taskID(), released.hostname().get()), self());
+				}
+
+				if(rescheduled != null) {
+					scheduleTask(rescheduled);
+				}
+
+			} catch (Exception e) {
+				LOG.error("Unable to create a replacement task for session {}", sessionID);
+				fatalError("Unable to access session store", e);
+				return;
+			}
+		}
 	}
 
 	// ------------------------------------------------------------------------
 	//  Utilities
 	// ------------------------------------------------------------------------
 
-	/**
-	 * Extracts a unique ResourceID from the Mesos task.
-	 *
-	 * @param taskId the Mesos TaskID
-	 * @return The ResourceID for the container
-	 */
-	static ResourceID extractResourceID(Protos.TaskID taskId) {
-		return new ResourceID(taskId.getValue());
+	private LaunchableMesosSession createLaunchableMesosSession(MesosSessionStore.Session session) {
+
+		LaunchableMesosSession launchable =
+			new LaunchableMesosSession(
+				artifactServer, sessionDefaults, session.params(),
+				appMasterTaskInfo, session.taskID());
+		return launchable;
 	}
 
 	/**
@@ -468,19 +677,6 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		};
 	}
 
-
-	static class MesosSession implements SessionIDRetrievable, Serializable {
-		private SessionID sessionId;
-		MesosSession(SessionID sessionId) {
-			this.sessionId = sessionId;
-		}
-		@Override
-		public SessionID getSessionID() {
-			return null;
-		}
-	}
-
-
 	/**
 	 * Creates the props needed to instantiate this actor.
 	 *
@@ -496,10 +692,10 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 	 *             The Mesos scheduler configuration.
 	 * @param jmTaskInfoTemplate
 	 *             The template for Mesos tasks launched by the dispatcher.
-	 * @param sessionStore
-	 *             The session store.
 	 * @param leaderElectionService
 	 *             The leader election service.
+	 * @param sessionStore
+	 *             The session store.
 	 * @param log
 	 *             The logger to log to.
 	 *
@@ -513,8 +709,8 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 		MesosSessionStore sessionStore,
 		SessionDefaults sessionDefaults,
 		LeaderElectionService leaderElectionService,
-		MesosArtifactServer artifactServer,
-		Path flinkJar,
+		SessionArtifactServer artifactServer,
+		ActorRef sessionStatusListener,
 		Logger log) {
 
 		return Props.create(actorClass,
@@ -525,72 +721,165 @@ public class MesosDispatcherBackend extends AbstractDispatcherBackend<MesosDispa
 			sessionDefaults,
 			leaderElectionService,
 			artifactServer,
-			flinkJar);
+			sessionStatusListener);
 	}
 
 	/**
-	 * In-memory session state, such as masters in 'new', 'launched', and 'released'.
-	 *
-	 * Mutates the artifact server state in tandem with the various hashmaps.
+	 * A representation of a session as provided by the Mesos dispatcher.
 	 */
-	class SessionState implements MesosArtifactResolver {
+	static class MesosSession implements SessionIDRetrievable, Serializable {
+		private SessionID sessionId;
+		MesosSession(SessionID sessionId) {
+			this.sessionId = sessionId;
+		}
+		@Override
+		public SessionID getSessionID() {
+			return null;
+		}
+	}
 
-//		final Map<ResourceID, MesosSessionStore.Session> mastersInNew;
-//		final Map<ResourceID, MesosSessionStore.Session> mastersInLaunch;
-//		final Map<ResourceID, MesosSessionStore.Session> mastersBeingReturned;
+	/**
+	 * An indexed cache of the persisted task information.
+	 */
+	static class TaskCache implements Comparator<MesosSessionStore.Session> {
 
-		private Path flinkJar;
+		private final MesosSessionStore sessionStore;
 
-		private SessionState(Path flinkJar) {
-			this.flinkJar = flinkJar;
+		final Map<Protos.TaskID, MesosSessionStore.Session> tasks = new HashMap<>();
+		final Map<Protos.TaskID, Protos.TaskStatus> taskStatuses = new HashMap<>();
+
+		/**
+		 * A reverse index of tasks by their associated session IDs.
+		 * Numerous tasks may exist for a single session - for example,
+		 * the backend may spawn a task to restart a session, while
+		 * the prior task is still being cleaned up.
+		 */
+		final Map<SessionID, List<MesosSessionStore.Session>> sessionIndex = new HashMap<>();
+
+		public TaskCache(MesosSessionStore sessionStore) {
+			this.sessionStore = sessionStore;
 		}
 
-		private LaunchableMesosSession createLaunchableMesosSession(MesosSessionStore.Session session) {
+		public List<MesosSessionStore.Session> recoverTasks() throws PersistenceException {
 
-			SessionParameters params = session.params();
-			Path sessionRemotePath = new Path(params.jobID().toString());
+			tasks.clear();
+			sessionIndex.clear();
+			final List<MesosSessionStore.Session> recovered = sessionStore.recoverTasks();
 
-			// register the artifacts needed by the task with the artifact server.
-			// flink.jar
-			try {
-				artifactServer.addPath(flinkJar, new Path(sessionRemotePath, "flink.jar"));
-			} catch (IOException e) {
-				throw new RuntimeException("failed to add flink jar to artifact server", e);
+			Set<Protos.TaskID> obsoleteStatuses = new HashSet<>(taskStatuses.keySet());
+
+			for (final MesosSessionStore.Session task : recovered) {
+				tasks.put(task.taskID(), task);
+
+				List<MesosSessionStore.Session> tasksForSession;
+				if(sessionIndex.containsKey(task.params().sessionID())) {
+					tasksForSession = sessionIndex.get(task.params().sessionID());
+				}
+				else {
+					tasksForSession = new ArrayList<MesosSessionStore.Session>(1);
+					sessionIndex.put(task.params().sessionID(), tasksForSession);
+				}
+				tasksForSession.add(task);
+				Collections.sort(tasksForSession, this);
+
+				obsoleteStatuses.remove(task.taskID());
 			}
 
-			// flink-conf.yaml
-			URL confURL;
-			try {
-				File tempFile = File.createTempFile("flink-conf-", ".yaml");
-				tempFile.deleteOnExit();
-				BootstrapTools.writeConfiguration(session.params().configuration(), tempFile);
-				LOG.info("Wrote session configuration to: {}", tempFile);
-
-				confURL = artifactServer.addPath(
-					new Path(tempFile.toURI()), new Path(sessionRemotePath, "flink-conf.yaml"));
-
-			} catch (IOException e) {
-				throw new RuntimeException("failed to add flink-conf.yaml to artifact server", e);
+			for(Protos.TaskID taskIDs : obsoleteStatuses) {
+				taskStatuses.remove(taskIDs);
 			}
 
-			// user artifacts
-			for(SessionParameters.Artifact file : params.artifacts()) {
-				try {
-					artifactServer.addPath(file.localPath(), new Path(sessionRemotePath, file.remotePath()));
-				} catch (Exception e) {
-					LOG.error("the artifact couldn't be added to the artifact server", e);
-					throw new RuntimeException("unusable artifact: " + file.localPath(), e);
+			return recovered;
+		}
+
+		public Map<SessionID, List<MesosSessionStore.Session>> getSessions() {
+			return Collections.unmodifiableMap(sessionIndex);
+		}
+
+		/**
+		 * Get the task with the corresponding task ID.
+         */
+		public Option<MesosSessionStore.Session> getTask(Protos.TaskID taskID) {
+			if(tasks.containsKey(taskID)) {
+				return Option.apply(tasks.get(taskID));
+			}
+			else {
+				return Option.empty();
+			}
+		}
+
+		/**
+		 * Find tasks associated with the given session ID.
+		 * In an HA configuration, more than one task may be associated with a single session.
+		 *
+         * @return a list of tasks, or empty if the dispatcher has no record of that session.
+         */
+		List<MesosSessionStore.Session> findTasks(SessionID sessionID) {
+			if(!sessionIndex.containsKey(sessionID)) {
+				return Collections.emptyList();
+			}
+			return sessionIndex.get(sessionID);
+		}
+
+		/**
+		 * Put the given task into persistent storage, and update the cache.
+		 * @param tasksToPut the task(s).
+         */
+		void putTask(MesosSessionStore.Session... tasksToPut) throws PersistenceException {
+			sessionStore.putTask(tasksToPut);
+
+			for(MesosSessionStore.Session task : tasksToPut) {
+				MesosSessionStore.Session prior = tasks.put(task.taskID(), task);
+				List<MesosSessionStore.Session> tasksForSession;
+				if (sessionIndex.containsKey(task.params().sessionID())) {
+					tasksForSession = sessionIndex.get(task.params().sessionID());
+				} else {
+					tasksForSession = new ArrayList<MesosSessionStore.Session>(1);
+					sessionIndex.put(task.params().sessionID(), tasksForSession);
+				}
+
+				if (!tasksForSession.contains(task.taskID())) {
+					tasksForSession.add(task);
+					Collections.sort(tasksForSession, this);
 				}
 			}
-
-			LaunchableMesosSession launchable =
-				new LaunchableMesosSession(this, sessionDefaults, session.params(), appMasterTaskInfo, session.taskID());
-			return launchable;
 		}
 
-		public Option<URL> resolve(JobID jobID, Path remotePath) {
-			Path sessionRemotePath = new Path(jobID.toString());
-			return artifactServer.resolve(new Path(sessionRemotePath, remotePath));
+		/**
+		 * Remove the task with the given task ID.
+         */
+		void removeTask(Protos.TaskID taskID) throws PersistenceException {
+			sessionStore.removeTask(taskID);
+			MesosSessionStore.Session prior = tasks.remove(taskID);
+			if(prior != null) {
+				if(sessionIndex.containsKey(prior.params().sessionID())) {
+					List<MesosSessionStore.Session> tasksForSession =
+						sessionIndex.get(prior.params().sessionID());
+					tasksForSession.remove(taskID);
+					if(tasksForSession.isEmpty()) {
+						sessionIndex.remove(prior.params().sessionID());
+					}
+				}
+				taskStatuses.remove(prior.taskID());
+			}
+		}
+
+		public Option<Protos.TaskStatus> getTaskStatus(Protos.TaskID taskID) {
+			if(!taskStatuses.containsKey(taskID)) {
+				return Option.empty();
+			}
+			else {
+				return Option.apply(taskStatuses.get(taskID));
+			}
+		}
+
+		public void putTaskStatus(Protos.TaskStatus taskStatus) {
+			taskStatuses.put(taskStatus.getTaskId(), taskStatus);
+		}
+
+		@Override
+		public int compare(MesosSessionStore.Session o1, MesosSessionStore.Session o2) {
+			return o1.attempt() - o2.attempt();
 		}
 	}
 

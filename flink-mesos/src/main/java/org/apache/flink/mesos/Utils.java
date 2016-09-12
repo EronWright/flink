@@ -22,6 +22,8 @@ import org.apache.mesos.Protos;
 
 import java.net.URL;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class Utils {
 	/**
@@ -72,5 +74,32 @@ public class Utils {
 			.setType(Protos.Value.Type.RANGES)
 			.setRanges(Protos.Value.Ranges.newBuilder().addAllRange(Arrays.asList(ranges)).build())
 			.build();
+	}
+
+	/**
+	 * Construct a labels value.
+	 */
+	public static Protos.Labels labels(Protos.Label... labels) {
+		return Protos.Labels.newBuilder()
+			.addAllLabels(Arrays.asList(labels))
+			.build();
+	}
+
+	/**
+	 * Construct a label value.
+     */
+	public static Protos.Label label(String key, String value) {
+		return Protos.Label.newBuilder().setKey(key).setValue(value).build();
+	}
+
+	/**
+	 * Construct a map of labels.
+     */
+	public static Map<String,String> toMap(Protos.Labels labels) {
+		Map<String,String> result = new LinkedHashMap<>(labels.getLabelsCount());
+		for(Protos.Label label : labels.getLabelsList()) {
+			result.put(label.getKey(), label.getValue());
+		}
+		return result;
 	}
 }
