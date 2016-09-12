@@ -406,13 +406,13 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 				}
 			}
 
+			// send the acceptance message to Mesos
+			schedulerDriver.acceptOffers(msg.offerIds(), msg.operations(), msg.filters());
+
 			// tell the task router about the new plans
 			for (TaskMonitor.TaskGoalStateUpdated update : toMonitor) {
 				taskRouter.tell(update, self());
 			}
-
-			// send the acceptance message to Mesos
-			schedulerDriver.acceptOffers(msg.offerIds(), msg.operations(), msg.filters());
 		}
 		catch(Exception ex) {
 			fatalError("unable to accept offers", ex);
@@ -612,11 +612,24 @@ public class MesosFlinkResourceManager extends FlinkResourceManager<RegisteredMe
 			if (launched != null) {
 				LOG.info("Mesos task {} failed, with a TaskManager in launch or registration. " +
 					"State: {} Reason: {} ({})", id, status.getState(), status.getReason(), status.getMessage());
+
+				if (launched.hostname().isDefined()) {
+					// tell the launch coordinator that the task is being unassigned from the host, for planning purposes
+					launchCoordinator.tell(new LaunchCoordinator.Unassign(launched.taskID(), launched.hostname().get()), self());
+				}
+
 				// we will trigger re-acquiring new workers at the end
 			} else {
 				// failed registered worker
 				LOG.info("Mesos task {} failed, with a registered TaskManager. " +
 					"State: {} Reason: {} ({})", id, status.getState(), status.getReason(), status.getMessage());
+
+				Option<RegisteredMesosWorkerNode> registered = getStartedWorker(id);
+				if(registered.isDefined() && registered.get().task().hostname().isDefined()) {
+					// tell the launch coordinator that the task is being unassigned from the host, for planning purposes
+					launchCoordinator.tell(new LaunchCoordinator.Unassign(
+						registered.get().task().taskID(), registered.get().task().hostname().get()), self());
+				}
 
 				// notify the generic logic, which notifies the JobManager, etc.
 				notifyWorkerFailed(id, "Mesos task " + id + " failed.  State: " + status.getState());

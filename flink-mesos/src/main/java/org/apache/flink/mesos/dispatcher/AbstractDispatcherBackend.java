@@ -18,6 +18,8 @@ import java.util.UUID;
 import static java.util.Objects.requireNonNull;
 
 /**
+ * An abstract dispatcher.
+ * <p>
  * Leadership grants write access to the session store and to the cluster manager (if any).
  */
 public abstract class AbstractDispatcherBackend<SessionType extends SessionIDRetrievable> extends UntypedActor {
@@ -44,7 +46,7 @@ public abstract class AbstractDispatcherBackend<SessionType extends SessionIDRet
 	/**
 	 * This method is called by Akka if a new message has arrived for the actor. It logs the
 	 * processing time of the incoming message if the logging level is set to debug.
-	 *
+	 * <p>
 	 * Important: This method cannot be overriden. The actor specific message handling logic is
 	 * implemented by the method handleMessage.
 	 *
@@ -53,14 +55,14 @@ public abstract class AbstractDispatcherBackend<SessionType extends SessionIDRet
 	 */
 	@Override
 	public final void onReceive(Object message) throws Exception {
-		if(LOG.isDebugEnabled()) {
+		if (LOG.isDebugEnabled()) {
 			LOG.debug("Received message {} at {} from {}.", message, getSelf().path(), getSender());
 
 			long start = System.nanoTime();
 
 			handleMessage(message);
 
-			long duration = (System.nanoTime() - start)/ 1000000;
+			long duration = (System.nanoTime() - start) / 1000000;
 
 			LOG.debug("Handled message {} in {} ms from {}.", message, duration, getSender());
 		} else {
@@ -91,8 +93,7 @@ public abstract class AbstractDispatcherBackend<SessionType extends SessionIDRet
 	public void preStart() throws Exception {
 		try {
 			leaderElectionService.start(new Contender());
-		}
-		catch(Exception ex) {
+		} catch (Exception ex) {
 			LOG.error("Could not start the dispatcher because the leader election service did not start.", ex);
 			throw new RuntimeException("Could not start the leader election service.", ex);
 		}

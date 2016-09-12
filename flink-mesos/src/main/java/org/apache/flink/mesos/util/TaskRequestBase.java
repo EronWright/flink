@@ -3,7 +3,6 @@ package org.apache.flink.mesos.util;
 import com.netflix.fenzo.ConstraintEvaluator;
 import com.netflix.fenzo.TaskRequest;
 import com.netflix.fenzo.VMTaskFitnessCalculator;
-import org.apache.flink.mesos.dispatcher.types.SessionParameters;
 import org.apache.mesos.Protos;
 
 import java.util.Collections;
@@ -12,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
+ * Abstract implementation of a TaskRequest.
  */
 public abstract class TaskRequestBase implements TaskRequest {
 

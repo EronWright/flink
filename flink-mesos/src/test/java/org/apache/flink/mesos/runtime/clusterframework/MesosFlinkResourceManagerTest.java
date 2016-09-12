@@ -30,6 +30,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.mesos.runtime.clusterframework.store.MesosWorkerStore;
 import org.apache.flink.mesos.scheduler.ConnectionMonitor;
 import org.apache.flink.mesos.scheduler.LaunchCoordinator;
+import org.apache.flink.mesos.scheduler.LaunchableTask;
 import org.apache.flink.mesos.scheduler.TaskMonitor;
 import org.apache.flink.mesos.scheduler.messages.*;
 import org.apache.flink.mesos.scheduler.messages.Error;
@@ -445,13 +446,19 @@ public class MesosFlinkResourceManagerTest {
 						initialize();
 						assertThat(resourceManagerInstance.workersInNew, hasEntry(extractResourceID(task1), worker1));
 						resourceManagerInstance.taskRouter.expectMsgClass(TaskMonitor.TaskGoalStateUpdated.class);
+						LaunchCoordinator.Launch launch =
+							resourceManagerInstance.launchCoordinator.expectMsgClass(LaunchCoordinator.Launch.class);
 						register(Collections.<ResourceID>emptyList());
+
+						LaunchableTask launchable = launch.tasks().get(0);
 
 						// send an AcceptOffers message as the LaunchCoordinator would
 						// to launch task1 onto slave1 with offer1
 						Protos.TaskInfo task1info = Protos.TaskInfo.newBuilder()
 							.setTaskId(task1).setName("").setSlaveId(slave1).build();
-						AcceptOffers msg = new AcceptOffers(slave1host, singletonList(offer1), singletonList(launch(task1info)));
+						AcceptOffers msg = new AcceptOffers(
+							slave1host, singletonList(launchable),
+							singletonList(offer1), singletonList(launch(task1info)));
 						resourceManager.tell(msg);
 
 						// verify that the worker was persisted, the internal state was updated,

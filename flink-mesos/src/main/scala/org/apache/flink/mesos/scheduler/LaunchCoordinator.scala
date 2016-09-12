@@ -188,20 +188,22 @@ class LaunchCoordinator(
         val operations = processAssignments(slaveId, assignments, remaining.toMap)
 
         // update the state to reflect the launched tasks
-        val launchedTasks = operations
+        val launchedTaskIds = operations
           .filter(_.getType==Protos.Offer.Operation.Type.LAUNCH)
           .flatMap(_.getLaunch.getTaskInfosList.asScala.map(_.getTaskId))
-        for(taskId <- launchedTasks) {
-          val task = remaining.remove(taskId.getValue).get
+        val launchedTasks = launchedTaskIds.map { id => remaining.remove(id.getValue).get }
+
+        for(task <- launchedTasks) {
           LOG.debug(s"Assigned task ${task.taskRequest().getId} to host ${hostname}.")
           optimizer.getTaskAssigner.call(task.taskRequest, hostname)
+          task
         }
 
         // send the operations to Mesos via manager
-        manager ! new AcceptOffers(hostname, offerIds.asJava, operations.asJava)
+        manager ! new AcceptOffers(hostname, launchedTasks.asJava, offerIds.asJava, operations.asJava)
 
         if(LOG.isInfoEnabled) {
-          LOG.info(s"Launched ${launchedTasks.length} task(s) on ${hostname}"
+          LOG.info(s"Launched ${launchedTaskIds.length} task(s) on ${hostname}"
             + s" using ${offerIds.length} offer(s):")
           for(offerId <- offerIds) {
             LOG.info(s"  ${offerId.getValue}")
@@ -244,7 +246,7 @@ class LaunchCoordinator(
 
     case Event(msg: Unassign, _) =>
       // planning to terminate a task - unassign it from its host in the optimizer's state
-      LOG.debug(s"Unassigned task ${msg.taskID} from host ${msg.hostname}.")
+      LOG.debug(s"Unassigned task ${msg.taskID.getValue} from host ${msg.hostname}.")
       optimizer.getTaskUnAssigner.call(msg.taskID.getValue, msg.hostname)
       stay()
   }

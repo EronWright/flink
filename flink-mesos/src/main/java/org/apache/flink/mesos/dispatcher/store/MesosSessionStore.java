@@ -1,5 +1,7 @@
 package org.apache.flink.mesos.dispatcher.store;
 
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.mesos.dispatcher.types.SessionID;
 import org.apache.flink.mesos.dispatcher.types.SessionParameters;
 import org.apache.mesos.Protos;
 import scala.Option;
@@ -7,73 +9,93 @@ import scala.Option;
 import java.io.Serializable;
 import java.text.DecimalFormat;
 import java.util.List;
-import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
+import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A store of Mesos sessions and associated framework information.
  */
 public interface MesosSessionStore {
 
-	static final DecimalFormat TASKID_FORMAT = new DecimalFormat("session-00000");
+	static final DecimalFormat TASKID_FORMAT = new DecimalFormat("jobmanager-00000");
 
-	void start() throws Exception;
+	void start() throws PersistenceException;
 
-	void stop() throws Exception;
+	void stop() throws PersistenceException;
 
-	Option<Protos.FrameworkID> getFrameworkID() throws Exception;
+	Option<Protos.FrameworkID> getFrameworkID() throws PersistenceException;
 
-	void setFrameworkID(Option<Protos.FrameworkID> frameworkID) throws Exception;
+	void setFrameworkID(Option<Protos.FrameworkID> frameworkID) throws PersistenceException;
 
-	List<Session> recoverSessions() throws Exception;
+	List<Session> recoverTasks() throws PersistenceException;
 
-	Protos.TaskID newTaskID() throws Exception;
+	Protos.TaskID newTaskID() throws PersistenceException;
 
-	void putSession(Session session) throws Exception;
+	void putTask(Session... tasks) throws PersistenceException;
 
-	void removeSession(Protos.TaskID taskID) throws Exception;
+	void removeTask(Protos.TaskID... taskID) throws PersistenceException;
 
-	void cleanup() throws Exception;
+	void cleanup() throws PersistenceException;
 
 	/**
 	 * A stored session.
-	 *
+	 * <p>
+	 * A session is realized as a succession of Mesos tasks (i.e. an initial task, followed
+	 * by a subsequent task in case of failure).
+	 * <p>
 	 * The assigned slaveid/hostname is valid in Launched and Released states.  The hostname is needed
 	 * by Fenzo for optimization purposes.
 	 */
-	static class Session implements Serializable {
+	class Session implements Serializable {
 
-		private SessionParameters params;
+		private final Protos.TaskID taskID;
 
-		private Protos.TaskID taskID;
+		private final TaskState state;
 
-		private Option<Protos.SlaveID> slaveID;
+		private final int attempt;
 
-		private Option<String> hostname;
+		private final Option<Protos.SlaveID> slaveID;
 
-		private TaskState state;
+		private final Option<String> hostname;
 
-		public Session(SessionParameters params, Protos.TaskID taskID, Option<Protos.SlaveID> slaveID, Option<String> hostname, TaskState state) {
-			requireNonNull(params, "params");
-			requireNonNull(taskID, "taskID");
-			requireNonNull(slaveID, "slaveID");
-			requireNonNull(hostname, "hostname");
-			requireNonNull(state, "state");
+		private final SessionParameters params;
 
-			this.params = params;
-			this.taskID = taskID;
-			this.slaveID = slaveID;
-			this.hostname = hostname;
-			this.state = state;
+		private final Configuration dynamicProperties;
+
+		Session(
+			SessionParameters params,
+			Configuration dynamicProperties,
+			Protos.TaskID taskID,
+			Option<Protos.SlaveID> slaveID,
+			Option<String> hostname,
+			TaskState state,
+			int attempt) {
+
+			this.taskID = requireNonNull(taskID, "taskID");
+			this.slaveID = requireNonNull(slaveID, "slaveID");
+			this.hostname = requireNonNull(hostname, "hostname");
+			this.state = requireNonNull(state, "state");
+			this.params = requireNonNull(params, "params");
+			this.dynamicProperties = requireNonNull(dynamicProperties, "dynamicProperties");
+			this.attempt = attempt;
 		}
 
 		public SessionParameters params() {
 			return params;
 		}
 
+		@Deprecated
+		public SessionID sessionID() {
+			return params.sessionID();
+		}
+
 		public Protos.TaskID taskID() {
 			return taskID;
+		}
+
+		public Configuration dynamicProperties() {
+			return dynamicProperties;
 		}
 
 		public Option<Protos.SlaveID> slaveID() {
@@ -88,37 +110,75 @@ public interface MesosSessionStore {
 			return state;
 		}
 
+		public TaskReleaseReason reason() {
+			return TaskReleaseReason.Failed;
+		}
+
+		public int attempt() {
+			return attempt;
+		}
+
 		// valid transition methods
 
-		public static Session newTask(SessionParameters params, Protos.TaskID taskID) {
+		/**
+		 * Define a new task with the given params and initial task ID.
+		 */
+		public static Session newTask(
+			SessionParameters params,
+			Configuration dynamicProperties,
+			Protos.TaskID taskID) {
 			return new Session(
 				params,
+				dynamicProperties,
 				taskID,
 				Option.<Protos.SlaveID>empty(), Option.<String>empty(),
-				TaskState.New);
+				TaskState.New,
+				1);
 		}
 
-		public Session launchTask(Protos.SlaveID slaveID, String hostname) {
-			return new Session(params, taskID, Option.apply(slaveID), Option.apply(hostname), TaskState.Launched);
+		/**
+		 * Launch the task onto the given slave with the given dynamic properties.
+		 */
+		public Session launchTask(
+			Configuration dynamicProperties,
+			Protos.SlaveID slaveID,
+			String hostname) {
+			checkState(state == TaskState.New);
+			return new Session(params, dynamicProperties,
+				taskID, Option.apply(slaveID), Option.apply(hostname), TaskState.Launched,
+				attempt);
 		}
 
-		public Session releaseTask() {
-			return new Session(params, taskID, slaveID, hostname, TaskState.Released);
+		/**
+		 * Reschedule a released task.
+		 * Recover the session with a new task.
+		 *
+		 * @param taskID the ID of the replacement task.
+		 */
+		public Session rescheduleTask(Configuration dynamicProperties, Protos.TaskID taskID) {
+			checkState(state == TaskState.Released);
+			return new Session(params, dynamicProperties,
+				taskID, Option.<Protos.SlaveID>empty(), Option.<String>empty(), TaskState.New,
+				attempt + 1);
 		}
 
-		@Override
-		public String toString() {
-			return "Session{" +
-				"taskID=" + taskID +
-				", slaveID=" + slaveID +
-				", hostname=" + hostname +
-				", state=" + state +
-				", params=" + params +
-				'}';
+		/**
+		 * Release the task.
+		 */
+		public Session releaseTask(TaskReleaseReason reason) {
+			checkState(state == TaskState.Launched);
+			return new Session(params, dynamicProperties, taskID, slaveID, hostname,
+				TaskState.Released, attempt);
 		}
 	}
 
 	enum TaskState {
-		New,Launched,Released
+		New, Launched, Released
 	}
+
+	enum TaskReleaseReason {
+		Failed,
+		Stopped
+	}
+
 }

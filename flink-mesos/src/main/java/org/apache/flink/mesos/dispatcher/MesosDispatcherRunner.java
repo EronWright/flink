@@ -21,62 +21,54 @@ package org.apache.flink.mesos.dispatcher;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Props;
-import com.typesafe.config.Config;
 import org.apache.curator.utils.ZKPaths;
-import org.apache.flink.api.common.JobID;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
-import org.apache.flink.core.fs.FSDataInputStream;
-import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.mesos.dispatcher.store.MesosSessionStore;
 import org.apache.flink.mesos.dispatcher.types.SessionDefaults;
-import org.apache.flink.mesos.dispatcher.types.SessionParameters;
 import org.apache.flink.mesos.util.MesosArtifactServer;
 import org.apache.flink.mesos.util.MesosConfiguration;
 import org.apache.flink.runtime.akka.AkkaUtils;
-import org.apache.flink.runtime.clusterframework.BootstrapTools;
 import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.flink.runtime.leaderelection.StandaloneLeaderElectionService;
 import org.apache.flink.runtime.process.ProcessReaper;
 import org.apache.flink.runtime.util.EnvironmentInformation;
 import org.apache.flink.runtime.util.SignalHandler;
-import org.apache.flink.util.IOUtils;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.mesos.Protos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.Option;
-import scala.Tuple2;
 
 import java.io.File;
 import java.net.InetAddress;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 /**
  * Runs the Mesos dispatcher.
- *
+ * <p>
  * The dispatcher process contains:
- *  - DispatcherFrontend - handles requests for sessions.
- *  - SessionStore - an implementation of a session store.
- *  - MesosDispatcherBackend - schedules sessions as Mesos tasks.
- *  - MesosArtifactServer - serve artifacts to launch a Mesos AppMaster.
+ * - MesosSessionStore - an implementation of a session store.
+ * - MesosDispatcherBackend - schedules sessions as Mesos tasks.
+ * - MesosArtifactServer - serve artifacts to launch a Mesos JobMaster.
  */
 public class MesosDispatcherRunner {
 
 	protected static final Logger LOG = LoggerFactory.getLogger(MesosDispatcherRunner.class);
 
-	/** The process environment variables */
+	/**
+	 * The process environment variables
+	 */
 	private static final Map<String, String> ENV = System.getenv();
 
-	/** The exit code returned if the initialization of the application master failed */
+	/**
+	 * The exit code returned if the initialization of the application master failed
+	 */
 	private static final int INIT_ERROR_EXIT_CODE = 31;
 
-	/** The exit code returned if the process exits because a critical actor died */
+	/**
+	 * The exit code returned if the process exits because a critical actor died
+	 */
 	private static final int ACTOR_DIED_EXIT_CODE = 32;
 
 	public static void main(String[] args) {
@@ -103,8 +95,7 @@ public class MesosDispatcherRunner {
 
 			return runPrivileged();
 
-		}
-		catch (Throwable t) {
+		} catch (Throwable t) {
 			// make sure that everything whatever ends up in the log
 			LOG.error("Mesos AppMaster initialization failed", t);
 			return INIT_ERROR_EXIT_CODE;
@@ -124,33 +115,33 @@ public class MesosDispatcherRunner {
 			Configuration config = GlobalConfiguration.loadConfiguration();
 
 			// start a local-only actor system
+			actorSystem = AkkaUtils.createLocalActorSystem(config);
 			final String dispatcherHostname = InetAddress.getLocalHost().getHostName();
-			Config akkaConfig = AkkaUtils.getAkkaConfig(config, Option.<Tuple2<String,Object>>empty());
-			LOG.debug("Using akka configuration\n {}", akkaConfig);
-			actorSystem = AkkaUtils.createActorSystem(akkaConfig);
 			LOG.info("Actor system started (local).");
-
 
 			LeaderElectionService leaderElectionService = new StandaloneLeaderElectionService();
 
-			MesosConfiguration mesosConfig = DispatcherUtils.createMesosConfig(config, dispatcherHostname);
+			MesosConfiguration mesosConfig =
+				DispatcherUtils.createMesosConfig(config, dispatcherHostname);
 
 			Protos.TaskInfo.Builder jmTaskInfo = createJobMasterTaskInfoTemplate();
 
 			MesosSessionStore sessionStore = DispatcherUtils.createSessionStore(config);
 
-			initializeSessionStore(sessionStore);
-
 			SessionDefaults sessionDefaults = createSessionDefaults(config);
 
-			MesosArtifactServer artifactServer = new MesosArtifactServer("placeholder", dispatcherHostname, 0);
-
+			// artifacts
 			Path flinkJarPath = new Path(new File("flink.jar").toURI());
+			MesosArtifactServer artifactServer =
+				new MesosArtifactServer("placeholder", dispatcherHostname, 0);
+			SessionArtifactServer sessionArtifactServer = new SessionArtifactServer(
+				artifactServer, flinkJarPath);
 
 			Props dispatcherProps = MesosDispatcherBackend.createActorProps(
 				MesosDispatcherBackend.class,
-				config, mesosConfig, jmTaskInfo, sessionStore, sessionDefaults, leaderElectionService, artifactServer,
-				flinkJarPath,
+				config, mesosConfig, jmTaskInfo, sessionStore, sessionDefaults,
+				leaderElectionService, sessionArtifactServer,
+				ActorRef.noSender(),
 				LOG);
 
 			ActorRef dispatcher = actorSystem.actorOf(dispatcherProps, "Mesos_Dispatcher");
@@ -159,11 +150,10 @@ public class MesosDispatcherRunner {
 			actorSystem.actorOf(
 				Props.create(ProcessReaper.class, dispatcher, LOG, ACTOR_DIED_EXIT_CODE),
 				"Mesos_Dispatcher_Process_Reaper");
-		}
-		catch(Throwable t) {
+		} catch (Throwable t) {
 			LOG.error("Mesos Dispatcher initialization failed", t);
 
-			if(actorSystem != null) {
+			if (actorSystem != null) {
 				actorSystem.shutdown();
 			}
 
@@ -177,35 +167,6 @@ public class MesosDispatcherRunner {
 		actorSystem.awaitTermination();
 
 		return 0;
-	}
-
-
-	private static void initializeSessionStore(MesosSessionStore store) throws Exception {
-
-		Configuration sessionConfiguration = GlobalConfiguration.loadConfiguration();
-
-		// artifacts
-		Path workingDir = FileSystem.getLocalFileSystem().getWorkingDirectory();
-		List<SessionParameters.Artifact> artifacts = new ArrayList<>();
-		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "log4j.properties"), "log4j.properties", false));
-		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "log4j-1.2.17.jar"), "log4j-1.2.17.jar", false));
-		artifacts.add(new SessionParameters.Artifact(new Path(workingDir, "slf4j-log4j12-1.7.7.jar"), "slf4j-log4j12-1.7.7.jar", false));
-
-		SessionParameters params = new SessionParameters(
-			UserGroupInformation.getCurrentUser().getShortUserName(),
-			new SessionParameters.ResourceProfile(1.0, 768.0),
-			new SessionParameters.ResourceProfile(1.5, 3000.0),
-			1,
-			1,
-			JobID.generate(),
-			sessionConfiguration,
-			artifacts,
-			null
-		);
-
-		MesosSessionStore.Session session = MesosSessionStore.Session.newTask(params, store.newTaskID());
-
-		store.putSession(session);
 	}
 
 	private static SessionDefaults createSessionDefaults(Configuration flinkConfig) {

@@ -18,7 +18,9 @@
 
 package org.apache.flink.mesos.scheduler.messages;
 
+import org.apache.flink.mesos.scheduler.LaunchableTask;
 import org.apache.mesos.Protos;
+import scala.Option;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -31,19 +33,24 @@ public class AcceptOffers implements Serializable {
 	private static final long serialVersionUID = 1L;
 
 	private final String hostname;
+	private final Collection<LaunchableTask> launchedTasks;
 	private final Collection<Protos.OfferID> offerIds;
 	private final Collection<Protos.Offer.Operation> operations;
 	private final Protos.Filters filters;
 
-	public AcceptOffers(String hostname, Collection<Protos.OfferID> offerIds, Collection<Protos.Offer.Operation> operations) {
+	public AcceptOffers(String hostname, Collection<LaunchableTask> launchedTasks,
+			Collection<Protos.OfferID> offerIds, Collection<Protos.Offer.Operation> operations) {
 		this.hostname = hostname;
+		this.launchedTasks = launchedTasks;
 		this.offerIds = offerIds;
 		this.operations = operations;
 		this.filters = Protos.Filters.newBuilder().build();
 	}
 
-	public AcceptOffers(String hostname, Collection<Protos.OfferID> offerIds, Collection<Protos.Offer.Operation> operations, Protos.Filters filters) {
+	public AcceptOffers(String hostname, Collection<LaunchableTask> launchedTasks,
+			Collection<Protos.OfferID> offerIds, Collection<Protos.Offer.Operation> operations, Protos.Filters filters) {
 		this.hostname = hostname;
+		this.launchedTasks = launchedTasks;
 		this.offerIds = offerIds;
 		this.operations = operations;
 		this.filters = filters;
@@ -51,6 +58,19 @@ public class AcceptOffers implements Serializable {
 
 	public String hostname() {
 		return hostname;
+	}
+
+	public Collection<LaunchableTask> launchedTasks() {
+		return launchedTasks;
+	}
+
+	public Option<LaunchableTask> findLaunchableTask(Protos.TaskID taskID) {
+		for(LaunchableTask task : launchedTasks) {
+			if(taskID.equals(task.taskID())) {
+				return Option.apply(task);
+			}
+		}
+		return Option.empty();
 	}
 
 	public Collection<Protos.OfferID> offerIds() {
@@ -70,6 +90,7 @@ public class AcceptOffers implements Serializable {
 		return "AcceptOffers{" +
 			"hostname='" + hostname + '\'' +
 			", offerIds=" + offerIds +
+			", launchedTasks=" + launchedTasks +
 			", operations=" + operations +
 			", filters=" + filters +
 			'}';

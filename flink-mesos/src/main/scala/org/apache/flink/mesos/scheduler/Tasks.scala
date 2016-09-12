@@ -94,6 +94,9 @@ class Tasks(
     case msg: Reconcile =>
       context.parent.forward(msg)
 
+    case msg: TaskStarted =>
+      context.parent.forward(msg)
+
     case msg: TaskTerminated =>
       taskMap.remove(msg.taskID)
       context.parent.forward(msg)

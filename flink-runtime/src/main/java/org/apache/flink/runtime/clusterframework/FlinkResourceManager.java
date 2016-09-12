@@ -54,6 +54,7 @@ import org.apache.flink.runtime.messages.JobManagerMessages.LeaderSessionMessage
 
 import org.apache.flink.util.Preconditions;
 
+import scala.Option;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
 import scala.concurrent.duration.FiniteDuration;
@@ -334,6 +335,15 @@ public abstract class FlinkResourceManager<WorkerType extends ResourceIDRetrieva
 	 */
 	public boolean isStarted(ResourceID resourceId) {
 		return startedWorkers.containsKey(resourceId);
+	}
+
+	/**
+	 * Gets the started worker for a given resource ID, if one is available.
+	 * @param resourceId The resource ID for the worker.
+	 * @return the worker if registered, otherwise empty.
+     */
+	public Option<WorkerType> getStartedWorker(ResourceID resourceId) {
+		return Option.apply(startedWorkers.getOrDefault(resourceId, null));
 	}
 
 	/**

@@ -83,6 +83,13 @@ under the License.
 			<fileMode>0755</fileMode>
 		</fileSet>
 		
+		<!-- copy Mesos start scripts -->
+		<fileSet>
+			<directory>src/main/flink-bin/mesos-bin</directory>
+			<outputDirectory>bin</outputDirectory>
+			<fileMode>0755</fileMode>
+		</fileSet>
+        
 		<!-- copy default configuration -->
 		<fileSet>
 			<directory>src/main/flink-bin/conf</directory>
