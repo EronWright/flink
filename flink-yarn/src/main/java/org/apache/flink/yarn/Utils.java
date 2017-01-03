@@ -64,10 +64,10 @@ public final class Utils {
 	public static final String KEYTAB_FILE_NAME = "krb5.keytab";
 
 	/** KRB5 file name populated in YARN container for secure IT run */
-	public static final String KRB5_FILE_NAME = "__TESTING_krb5.conf";
+	public static final String KRB5_FILE_NAME = "krb5.conf";
 
 	/** Yarn site xml file name populated in YARN container for secure IT run */
-	public static final String YARN_SITE_FILE_NAME = "__TESTING_yarn-site.xml";
+	public static final String YARN_SITE_FILE_NAME = "yarn-site.xml";
 
 	/**
 	 * See documentation

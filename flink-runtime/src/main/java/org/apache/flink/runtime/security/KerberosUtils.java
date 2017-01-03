@@ -49,8 +49,6 @@ public class KerberosUtils {
 
 	private static final Map<String, String> kerberosCacheOptions = new HashMap<>();
 
-	private static final Map<String, String> keytabKerberosOptions = new HashMap<>();
-
 	private static final AppConfigurationEntry userKerberosAce;
 
 	static {
@@ -96,6 +94,7 @@ public class KerberosUtils {
 		checkNotNull(keytab, "keytab");
 		checkNotNull(principal, "principal");
 
+		Map<String, String> keytabKerberosOptions = new HashMap<>();
 
 		if(IBM_JAVA) {
 			keytabKerberosOptions.put("useKeytab", prependFileUri(keytab));

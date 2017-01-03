@@ -1,8 +1,23 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.flink.runtime.security.modules;
 
-import org.apache.flink.configuration.SecurityOptions;
 import org.apache.flink.runtime.security.SecurityUtils;
-import org.apache.zookeeper.client.ZooKeeperSaslClient;
 
 /**
  * Responsible for installing a process-wide ZooKeeper security configuration.
@@ -46,8 +61,16 @@ public class ZooKeeperModule implements SecurityModule {
 
 	@Override
 	public void uninstall() {
-		System.setProperty(ZK_SASL_CLIENT_USERNAME, priorServiceName);
-		System.setProperty(ZK_LOGIN_CONTEXT_NAME, priorLoginContextName);
+		if(priorServiceName != null) {
+			System.setProperty(ZK_SASL_CLIENT_USERNAME, priorServiceName);
+		} else {
+			System.clearProperty(ZK_SASL_CLIENT_USERNAME);
+		}
+		if(priorLoginContextName != null) {
+			System.setProperty(ZK_LOGIN_CONTEXT_NAME, priorLoginContextName);
+		} else {
+			System.clearProperty(ZK_LOGIN_CONTEXT_NAME);
+		}
 	}
 
 }
