@@ -25,6 +25,10 @@ import org.apache.mesos.Protos;
 
 import java.net.URL;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.function.Supplier;
+import java.util.stream.LongStream;
+import java.util.stream.Stream;
 
 import scala.Option;
 
@@ -75,7 +79,7 @@ public class Utils {
 	 * Construct a scalar resource value.
 	 */
 	public static Protos.Resource scalar(String name, String role, double value) {
-		return Protos.Resource.newBuilder()
+ 		return Protos.Resource.newBuilder()
 			.setName(name)
 			.setType(Protos.Value.Type.SCALAR)
 			.setScalar(Protos.Value.Scalar.newBuilder().setValue(value))
@@ -88,6 +92,23 @@ public class Utils {
 	 */
 	public static Protos.Value.Range range(long begin, long end) {
 		return Protos.Value.Range.newBuilder().setBegin(begin).setEnd(end).build();
+	}
+
+	/**
+	 * Gets a stream of values from a collection of range resources.
+	 */
+	public static LongStream rangeValues(Collection<Protos.Resource> resources) {
+		return resources.stream()
+			.filter(Protos.Resource::hasRanges)
+			.flatMap(r -> r.getRanges().getRangeList().stream())
+			.flatMapToLong(Utils::rangeValues);
+	}
+
+	/**
+	 * Gets a stream of values from a range.
+	 */
+	public static LongStream rangeValues(Protos.Value.Range range) {
+		return LongStream.rangeClosed(range.getBegin(), range.getEnd());
 	}
 
 	/**

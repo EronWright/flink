@@ -23,13 +23,13 @@ import java.util.Collections
 import akka.actor.{Actor, ActorRef, FSM, Props}
 import com.netflix.fenzo._
 import com.netflix.fenzo.functions.Action1
-import com.netflix.fenzo.plugins.VMLeaseObject
 import grizzled.slf4j.Logger
-import org.apache.flink.api.java.tuple.{Tuple2=>FlinkTuple2}
+import org.apache.flink.api.java.tuple.{Tuple2 => FlinkTuple2}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.mesos.scheduler.LaunchCoordinator._
 import org.apache.flink.mesos.scheduler.messages._
-import org.apache.mesos.{SchedulerDriver, Protos}
+import org.apache.flink.mesos.util.MesosResourceAllocation
+import org.apache.mesos.{Protos, SchedulerDriver}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
@@ -148,7 +148,7 @@ class LaunchCoordinator(
 
     case Event(offers: ResourceOffers, data: GatherData) =>
       val leases = offers.offers().asScala.map(
-        new VMLeaseObject(_).asInstanceOf[VirtualMachineLease])
+        new Offer(_).asInstanceOf[VirtualMachineLease])
       if(LOG.isInfoEnabled) {
         val (cpus, mem) = leases.foldLeft((0.0,0.0)) {
           (z,o) => (z._1 + o.cpuCores(), z._2 + o.memoryMB())
@@ -156,6 +156,7 @@ class LaunchCoordinator(
         LOG.info(s"Received offer(s) of $mem MB, $cpus cpus:")
         for(l <- leases) {
           LOG.info(s"  ${l.getId} from ${l.hostname()} of ${l.memoryMB()} MB, ${l.cpuCores()} cpus")
+          LOG.debug(s"      ${l}")
         }
       }
       stay using data.copy(newLeases = data.newLeases ++ leases) forMax (1 seconds)
@@ -326,8 +327,12 @@ object LaunchCoordinator {
       assignments: VMAssignmentResult,
       allTasks: Map[String, LaunchableTask]): Seq[Protos.Offer.Operation] = {
 
+    val resources = assignments.getLeasesUsed.asScala
+      .flatMap(_.asInstanceOf[Offer].getResources.asScala)
+    val allocator = new MesosResourceAllocation(resources.asJava)
+
     def taskInfo(assignment: TaskAssignmentResult): Protos.TaskInfo = {
-      allTasks(assignment.getTaskId).launch(slaveId, assignment)
+      allTasks(assignment.getTaskId).launch(slaveId, allocator)
     }
 
     val launches = Protos.Offer.Operation.newBuilder()
