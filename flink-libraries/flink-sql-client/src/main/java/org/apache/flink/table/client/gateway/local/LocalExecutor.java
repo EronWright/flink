@@ -50,6 +50,7 @@ import org.apache.flink.table.client.gateway.local.result.BasicResult;
 import org.apache.flink.table.client.gateway.local.result.ChangelogResult;
 import org.apache.flink.table.client.gateway.local.result.DynamicResult;
 import org.apache.flink.table.client.gateway.local.result.MaterializedResult;
+import org.apache.flink.table.client.gateway.utils.ExecutorUtil;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.StringUtils;
 
@@ -197,7 +198,7 @@ public class LocalExecutor implements Executor {
 		final TableEnvironment tableEnv = context
 			.createEnvironmentInstance()
 			.getTableEnvironment();
-		return context.wrapClassLoader(() -> Arrays.asList(tableEnv.listTables()));
+		return context.wrapClassLoader(() -> ExecutorUtil.listTables(tableEnv));
 	}
 
 	@Override

@@ -108,7 +108,7 @@ abstract class TableEnvironment(val config: TableConfig) {
   private[flink] val attrNameCntr: AtomicInteger = new AtomicInteger(0)
 
   // registered external catalog names -> catalog
-  private val externalCatalogs = new mutable.HashMap[String, ExternalCatalog]
+  private val externalCatalogs = new mutable.ListMap[String, ExternalCatalog]
 
   /** Returns the table config to define the runtime behavior of the Table API. */
   def getConfig: TableConfig = config

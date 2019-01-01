@@ -25,14 +25,41 @@ import org.apache.flink.table.plan.stats.FlinkStatistic
 import org.apache.flink.table.sinks.{BatchTableSink, StreamTableSink}
 import org.apache.flink.table.sources.{BatchTableSource, StreamTableSource}
 import org.apache.flink.table.util.Logging
+import _root_.java.util.{List => JList}
 
+import _root_.scala.collection.JavaConverters._
+
+import _root_.scala.annotation.varargs
 
 /**
-  * The utility class is used to convert [[ExternalCatalogTable]] to [[TableSourceSinkTable]].
+  * The utility class for catalog-related functionality, e.g. to convert [[ExternalCatalogTable]] to [[TableSourceSinkTable]].
   *
   * It uses [[TableFactoryService]] for discovering.
   */
 object ExternalTableUtil extends Logging {
+
+  /**
+    * Makes a fully-qualified (dot-separated) table name for the given table path.
+    *
+    * @param tablePath the table path (e.g. "catalogName", "dbName", "tableName").
+    *
+    * @return a table name suitable for use in a query.
+    */
+  @varargs
+  def makeQualifiedTableName(tablePath: String*): String = {
+    tablePath.mkString(".")
+  }
+
+  /**
+    * Makes a fully-qualified (dot-separated) table name for the given table path.
+    *
+    * @param tablePath the table path (e.g. "catalogName", "dbName", "tableName").
+    *
+    * @return a table name suitable for use in a query.
+    */
+  def makeQualifiedTableName(tablePath: JList[String]): String = {
+    tablePath.asScala.mkString(".")
+  }
 
   /**
     * Converts an [[ExternalCatalogTable]] instance to a [[TableSourceTable]] instance
